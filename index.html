@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="Board game recommender with BoardGameGeek collection import, search, and rulebook and how-to-play links.">
+<meta name="description" content="Board game recommender over BoardGameGeek's catalog, with collection import, game-night picker, and rulebook and how-to-play links.">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Tabletop Shelf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -172,7 +172,33 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--sunk);padding:1
 
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
 
+/* covers (load only where the page may show BGG images) */
+.box .cover,.sheet .hero .cover{position:absolute;object-fit:cover;background:rgba(255,255,255,.15);border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.box .cover{right:12px;top:12px;width:68px;height:68px;max-width:40%}
+.box.has-cover .initial{display:none}
+.box.has-cover .tag{right:auto;left:10px;top:30px}
+.box.has-cover .t{right:12px}
+.sheet .hero .cover{right:64px;top:18px;width:104px;height:104px}
+.sheet .hero.has-cover .initial{display:none}
+.sheet .hero.has-cover h2{right:180px}
+.swatch img{width:100%;height:100%;object-fit:cover;border-radius:4px;display:block}
+/* tonight */
+.pick{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:24px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:28px}
+.pick h2{font-size:clamp(24px,3.4vw,34px);line-height:1.05}
+.pick .why{font-size:14px}
+.pick .actions{display:flex;gap:8px;flex-wrap:wrap}
+.miss{display:flex;flex-direction:column}
+.miss .li{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+/* teach */
+.teach{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:var(--bg)}
+.teach h4{font-family:var(--f-display);font-size:15px;margin:14px 0 4px;letter-spacing:-.01em}
+.teach h4:first-child{margin-top:0}
+.teach p{margin:4px 0}
+.teach ul{margin:4px 0;padding-left:20px}
+.teach li+li{margin-top:2px}
+.teach .note{margin-top:12px}
 @media (max-width:760px){
+  .pick{grid-template-columns:minmax(0,1fr)}
   .profile,.two{grid-template-columns:minmax(0,1fr)}
   nav.tabs{margin-left:0;width:100%}
   nav.tabs a{flex:1;text-align:center;padding:7px 6px}
@@ -192,6 +218,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--sunk);padding:1
     </a>
     <nav class="tabs" aria-label="Sections">
       <a href="#discover" data-view="discover">For you</a>
+      <a href="#tonight" data-view="tonight">Tonight</a>
       <a href="#browse" data-view="browse">Search</a>
       <a href="#shelf" data-view="shelf">My shelf<span class="count" id="shelfCount"></span></a>
     </nav>
@@ -203,221 +230,36 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--sunk);padding:1
 <div id="toastRoot"></div>
 
 <script>
-/* ---------- Catalog ----------
-   [name, year, weight(1-5, approx BGG), minP, maxP, minutes, mechanics, themes, blurb] */
-const RAW = [
-["Catan",1995,2.3,3,4,90,"Trading|Dice|Network Building|Negotiation","Medieval|Economic","Gather resources, trade with the table, and build roads and settlements across a hex island."],
-["Ticket to Ride",2004,1.8,2,5,60,"Set Collection|Route Building|Hand Management","Trains|Travel","Collect colored train cards and claim railway routes across North America."],
-["Ticket to Ride: Europe",2005,1.9,2,5,60,"Set Collection|Route Building|Hand Management","Trains|Travel","Ticket to Ride with tunnels, ferries and train stations across Europe."],
-["Carcassonne",2000,1.9,2,5,45,"Tile Placement|Area Control","Medieval|City","Draw and place tiles to grow a landscape, then claim cities, roads and fields with meeples."],
-["Pandemic",2008,2.4,2,4,45,"Cooperative|Hand Management|Action Points|Set Collection","Science","A team of specialists races to cure four diseases before outbreaks overwhelm the world."],
-["Pandemic Legacy: Season 1",2015,2.8,2,4,60,"Cooperative|Legacy|Campaign|Hand Management|Action Points","Science","Pandemic as a year-long campaign where your choices permanently change the game."],
-["Wingspan",2019,2.5,1,5,70,"Engine Building|Hand Management|Dice|Set Collection|Solo","Animals|Nature","Attract birds to your wildlife preserves; each one adds to a growing engine of powers."],
-["Azul",2017,1.8,2,4,40,"Drafting|Pattern Building|Set Collection","Abstract","Draft colorful tiles and decorate a palace wall without wasting any."],
-["7 Wonders",2010,2.3,2,7,30,"Drafting|Set Collection|Hand Management","Ancient|Civilization","Draft cards over three ages to build an ancient city and its wonder. Plays 7 in 30 minutes."],
-["7 Wonders Duel",2015,2.2,2,2,30,"Drafting|Set Collection","Ancient|Civilization","A tight two-player take on 7 Wonders with a military tug-of-war and science race."],
-["Splendor",2014,1.8,2,4,30,"Engine Building|Set Collection","Economic|Historical","Collect gems, buy cards that give permanent discounts, and attract visiting nobles."],
-["Codenames",2015,1.3,2,8,15,"Party|Deduction","Mystery","Spymasters give one-word clues so their team can find secret agents on the grid."],
-["Codenames: Duet",2017,1.3,2,2,15,"Cooperative|Deduction|Party","Mystery","The cooperative two-player version of Codenames."],
-["Dominion",2008,2.4,2,4,30,"Deck Building|Hand Management","Medieval","The original deck-builder: buy cards to grow your deck and your kingdom."],
-["Terraforming Mars",2016,3.3,1,5,120,"Engine Building|Hand Management|Tile Placement|Solo","Sci-Fi|Space|Science","Corporations race to make Mars habitable with cards, tiles and production tracks."],
-["Gloomhaven",2017,3.9,1,4,120,"Cooperative|Campaign|Hand Management|Dungeon Crawl|Legacy|Solo","Fantasy|Adventure","A huge tactical campaign of card-driven combat across a branching fantasy story."],
-["Gloomhaven: Jaws of the Lion",2020,3.6,1,4,120,"Cooperative|Campaign|Hand Management|Dungeon Crawl|Solo","Fantasy|Adventure","A smaller Gloomhaven with a guided tutorial campaign; the friendliest way in."],
-["Frosthaven",2023,4.4,1,4,180,"Cooperative|Campaign|Legacy|Hand Management|Dungeon Crawl|Solo","Fantasy|Adventure","The massive Gloomhaven sequel with an outpost to build between scenarios."],
-["Spirit Island",2017,4.0,1,4,120,"Cooperative|Area Control|Hand Management|Asymmetric|Solo","Fantasy|Mythology","Island spirits with very different powers work together to drive off colonizing invaders."],
-["Scythe",2016,3.4,1,5,115,"Area Control|Engine Building|Asymmetric|Economic|Solo","Historical|Sci-Fi","Lead a faction in an alternate 1920s Europe of mechs, farms and territory."],
-["Everdell",2018,2.8,1,4,80,"Worker Placement|Engine Building|Hand Management|Solo","Animals|Nature|Fantasy","Woodland critters build a city of cards over four seasons."],
-["Agricola",2007,3.6,1,4,120,"Worker Placement|Economic|Solo","Farming|Historical","Grow a 17th-century farm and keep your family fed through the harvests."],
-["Puerto Rico",2002,3.3,3,5,120,"Role Selection|Economic|Engine Building","Historical|Economic","Choose roles to plant, build, produce and ship goods."],
-["Power Grid",2004,3.3,2,6,120,"Auction|Network Building|Economic","Economic|City","Bid on power plants, buy fuel and wire up cities across the map."],
-["Brass: Birmingham",2018,3.9,2,4,120,"Network Building|Hand Management|Economic|Route Building","Historical|Economic|Trains","Build industries, canals and rails during the Industrial Revolution."],
-["Brass: Lancashire",2007,3.9,2,4,120,"Network Building|Hand Management|Economic|Route Building","Historical|Economic|Trains","The original Brass, centered on Lancashire's cotton mills and ports."],
-["Ark Nova",2021,3.7,1,4,150,"Engine Building|Hand Management|Tile Placement|Solo","Animals|Nature","Design a modern zoo and fund conservation projects."],
-["Dune: Imperium",2020,3.0,1,4,120,"Worker Placement|Deck Building|Solo","Sci-Fi","Deck-building plus worker placement in a fight for control of Arrakis."],
-["Root",2018,3.7,2,4,90,"Area Control|Asymmetric|Hand Management","Animals|Fantasy","Woodland factions with completely different rules fight for the forest."],
-["Cascadia",2021,1.9,1,4,45,"Tile Placement|Drafting|Pattern Building|Solo","Animals|Nature","Draft habitat tiles and wildlife tokens to build the Pacific Northwest."],
-["Harmonies",2024,2.0,1,4,40,"Tile Placement|Pattern Building|Puzzle|Solo","Animals|Nature","Stack colored tokens into landscapes that give animals a home."],
-["Patchwork",2014,1.6,2,2,30,"Polyomino|Puzzle|Economic","Abstract","Two players race to fill a quilt with patch tiles and buttons."],
-["Sagrada",2017,1.9,1,4,40,"Dice|Drafting|Pattern Building|Puzzle|Solo","Abstract","Draft dice to build a stained-glass window under color and number rules."],
-["Kingdomino",2016,1.2,2,4,15,"Tile Placement|Drafting","Medieval","Pick domino tiles and build a 5×5 kingdom of matching terrain."],
-["Love Letter",2012,1.2,2,6,20,"Deduction|Hand Management|Bluffing","Medieval","Sixteen cards of bluffing and deduction."],
-["The Crew: The Quest for Planet Nine",2019,2.0,2,5,20,"Trick Taking|Cooperative|Campaign","Space","A cooperative trick-taking campaign with tightly limited communication."],
-["The Crew: Mission Deep Sea",2021,2.1,2,5,20,"Trick Taking|Cooperative|Campaign","Ocean","The second Crew campaign, with more flexible mission goals."],
-["Mysterium",2015,1.9,2,7,42,"Cooperative|Deduction|Party","Mystery|Horror","A silent ghost sends dream-vision cards to help mediums solve a murder."],
-["Dixit",2008,1.2,3,6,30,"Party|Storytelling|Bluffing","Fantasy","Give clues for dreamlike art cards that are neither too obvious nor too obscure."],
-["Wavelength",2019,1.1,2,12,45,"Party","Humor","Teams guess where a clue falls on a spectrum between two ideas."],
-["Just One",2018,1.0,3,7,20,"Party|Cooperative","Humor","Everyone writes a one-word clue; duplicates cancel out."],
-["So Clover!",2021,1.2,3,6,30,"Party|Cooperative","Humor","Write clues that link word pairs on your clover, then the table solves each one."],
-["Sushi Go Party!",2016,1.3,2,8,20,"Drafting|Set Collection","Food","Fast card-drafting of sushi combos, with a menu you pick each game."],
-["King of Tokyo",2011,1.5,2,6,30,"Dice|Push Your Luck","Sci-Fi|Humor","Giant monsters roll dice to smash Tokyo and each other."],
-["Lost Ruins of Arnak",2020,2.9,1,4,90,"Deck Building|Worker Placement|Solo","Exploration|Adventure","Explore a jungle island by mixing deck-building with worker placement."],
-["Great Western Trail",2016,3.7,1,4,150,"Deck Building|Route Building|Economic","Western","Drive cattle to Kansas City while improving the trail as you go."],
-["Concordia",2013,3.0,2,5,100,"Hand Management|Economic|Network Building","Ancient|Historical","Trade across the Roman Mediterranean; the cards you buy decide your score."],
-["Orléans",2014,3.0,2,4,90,"Bag Building|Worker Placement|Engine Building","Medieval","Draw followers from a bag and send them to work in medieval France."],
-["The Quacks of Quedlinburg",2018,1.9,2,4,45,"Bag Building|Push Your Luck","Fantasy|Humor","Brew potions by drawing ingredients, and stop before your pot explodes."],
-["Viticulture Essential Edition",2015,2.9,1,6,90,"Worker Placement|Hand Management|Solo","Farming|Food","Run a Tuscan vineyard: plant, harvest, make wine and fill orders."],
-["The Castles of Burgundy",2011,3.0,1,4,90,"Dice|Tile Placement|Set Collection|Solo","Medieval","Use dice to pick tiles and develop your estate in the Loire Valley."],
-["Twilight Imperium: Fourth Edition",2017,4.3,3,6,480,"Area Control|Negotiation|Trading|Asymmetric","Sci-Fi|Space|Civilization","An all-day galactic empire game of politics, trade and war."],
-["Twilight Struggle",2005,3.6,2,2,180,"Area Control|Hand Management|Wargame","Historical","The Cold War as a two-player card-driven struggle."],
-["Arkham Horror: The Card Game",2016,3.5,1,2,120,"Cooperative|Deck Building|Campaign|Storytelling|Solo","Horror|Mystery","Investigators build decks and face Lovecraftian horrors in a story campaign."],
-["Eldritch Horror",2013,3.3,1,8,240,"Cooperative|Dice|Storytelling|Solo","Horror|Adventure","Globe-trotting investigators race to stop an Ancient One from waking."],
-["Betrayal at House on the Hill",2004,2.4,3,6,60,"Storytelling|Dice|Tile Placement","Horror","Explore a haunted house together until one of you turns traitor."],
-["Mansions of Madness: Second Edition",2016,2.7,1,5,150,"Cooperative|Storytelling|Dice|Solo","Horror|Mystery","App-guided Lovecraftian investigations in creepy mansions."],
-["Clank!",2016,2.2,2,4,60,"Deck Building|Push Your Luck|Racing","Fantasy|Adventure","Deck-build into a dragon's lair; make too much noise and you'll get burned."],
-["Star Realms",2014,1.9,2,2,20,"Deck Building","Sci-Fi|Space","A fast spaceship-combat deck-building duel."],
-["Sky Team",2023,1.7,2,2,15,"Cooperative|Dice|Puzzle","Aviation","Two pilots land a plane by placing dice without talking."],
-["Heat: Pedal to the Metal",2022,2.2,1,6,60,"Racing|Hand Management|Push Your Luck|Solo","Sports","1960s motor racing driven by cards, speed and engine heat."],
-["Flamme Rouge",2016,1.7,2,4,45,"Racing|Hand Management","Sports","Cycling race where you manage two riders' energy decks."],
-["Downforce",2017,1.8,2,6,40,"Racing|Auction|Hand Management","Sports","Bid on cars, race them, and bet on who wins."],
-["Cartographers",2019,1.9,1,100,45,"Roll & Write|Polyomino|Puzzle|Solo","Fantasy|Exploration","Draw terrain shapes on your map to meet the queen's edicts."],
-["Calico",2020,2.2,1,4,45,"Tile Placement|Pattern Building|Puzzle|Solo","Animals","Sew a cozy quilt with patterns that attract cats."],
-["Parks",2019,2.2,1,5,60,"Set Collection|Hand Management|Solo","Nature|Travel","Hike through the seasons visiting US national parks."],
-["Tokaido",2012,1.7,2,5,45,"Set Collection","Travel","Travel Japan's East Sea Road, collecting experiences along the way."],
-["Takenoko",2011,2.0,2,4,45,"Tile Placement|Set Collection|Dice","Animals|Farming","Tend a bamboo garden while a hungry panda eats it."],
-["Jaipur",2009,1.5,2,2,30,"Set Collection|Trading|Hand Management","Economic","Two merchants trade goods and camels to become the Maharaja's trader."],
-["Lost Cities",1999,1.5,2,2,30,"Hand Management|Set Collection|Push Your Luck","Exploration","Fund expeditions by laying cards in ascending order."],
-["Hanabi",2010,1.7,2,5,25,"Cooperative|Hand Management|Deduction","Abstract","Build a fireworks show together while seeing everyone's cards but your own."],
-["Coup",2012,1.4,2,6,15,"Bluffing|Social Deduction","Sci-Fi","Bluff about your roles to be the last player with influence."],
-["The Resistance: Avalon",2012,1.8,5,10,30,"Social Deduction|Bluffing","Medieval|Fantasy","Loyal knights complete quests while hidden minions sabotage them."],
-["Secret Hitler",2016,1.7,5,10,45,"Social Deduction|Bluffing","Historical","Liberals try to find the hidden leader before fascist policies pass."],
-["One Night Ultimate Werewolf",2014,1.3,3,10,10,"Social Deduction|Party","Horror","A ten-minute werewolf game with no elimination."],
-["Blood on the Clocktower",2022,3.0,5,20,90,"Social Deduction|Bluffing","Horror","Storyteller-run social deduction with rich character powers."],
-["Decrypto",2018,1.8,3,8,45,"Party|Deduction","Sci-Fi","Send coded clues to your team without letting rivals crack the code."],
-["Telestrations",2009,1.0,4,8,30,"Party","Humor","Draw-and-guess telephone."],
-["Sheriff of Nottingham",2014,1.6,3,5,60,"Bluffing|Negotiation","Medieval","Smuggle goods past the sheriff with bribes and bluffs."],
-["Small World",2009,2.4,2,5,80,"Area Control","Fantasy|Humor","Fantasy races conquer a too-small world, then go into decline."],
-["Risk",1959,2.1,2,6,120,"Area Control|Dice|Wargame","Historical","Classic world conquest with armies and dice."],
-["Blood Rage",2015,2.9,2,4,90,"Area Control|Drafting","Mythology|Fantasy","Viking clans draft cards and fight for glory before Ragnarök."],
-["Inis",2016,2.9,2,4,90,"Area Control|Drafting|Hand Management","Mythology","Celtic clans vie to be crowned on the island of Inis."],
-["Cyclades",2009,2.8,2,5,75,"Area Control|Auction","Mythology|Ancient","Bid for the favor of the Greek gods to build two cities."],
-["El Grande",1995,3.1,2,5,120,"Area Control|Auction|Hand Management","Medieval|Historical","Grandees compete for regions of medieval Spain."],
-["Tigris & Euphrates",1997,3.5,2,4,90,"Tile Placement|Area Control","Ancient|Civilization","Build and clash kingdoms in ancient Mesopotamia; your weakest color is your score."],
-["Through the Ages: A New Story of Civilization",2015,4.4,2,4,180,"Drafting|Engine Building|Action Points","Civilization","Guide a civilization from antiquity to the modern age with cards."],
-["Clans of Caledonia",2017,3.5,1,4,120,"Economic|Trading|Solo","Farming|Historical","Scottish clans farm, trade and export whisky and cheese."],
-["A Feast for Odin",2016,3.9,1,4,120,"Worker Placement|Polyomino|Solo","Historical","Vikings hunt, trade and raid, then fit goods onto their home boards."],
-["Caverna: The Cave Farmers",2013,3.8,1,7,210,"Worker Placement|Tile Placement|Solo","Fantasy|Farming","Dwarves dig caves, forge weapons and farm the forest."],
-["Lords of Waterdeep",2012,2.5,2,5,90,"Worker Placement|Set Collection|Hand Management","Fantasy|City","Secret lords hire adventurers to complete quests in a fantasy city."],
-["Stone Age",2008,2.5,2,4,90,"Worker Placement|Dice|Set Collection","Ancient","Prehistoric tribes gather food and resources to grow."],
-["Architects of the West Kingdom",2018,2.8,1,5,80,"Worker Placement|Solo","Medieval","Build up the kingdom while capturing rivals' workers."],
-["Raiders of the North Sea",2015,2.6,2,4,80,"Worker Placement|Set Collection","Historical","Viking crews raid settlements to impress the chieftain."],
-["Underwater Cities",2018,3.2,1,4,150,"Worker Placement|Engine Building|Hand Management|Solo","Ocean|Sci-Fi","Build a network of domes on the sea floor."],
-["Gaia Project",2017,4.4,1,4,150,"Asymmetric|Network Building|Economic|Solo","Sci-Fi|Space","Terra Mystica in space: asymmetric factions colonize planets."],
-["Terra Mystica",2012,4.0,2,5,150,"Asymmetric|Network Building|Economic","Fantasy","Asymmetric factions terraform the land to suit themselves."],
-["Mage Knight Board Game",2011,4.3,1,4,240,"Deck Building|Hand Management|Solo","Fantasy|Adventure","A deep, puzzly fantasy conquest best known as a solo game."],
-["Too Many Bones",2017,3.8,1,4,120,"Cooperative|Dice|Solo","Fantasy|Adventure","Dice-driven RPG battles with heroes you build skill by skill."],
-["Marvel Champions: The Card Game",2019,2.7,1,4,90,"Cooperative|Hand Management|Deck Building|Solo","Comics","Superheroes team up against villain scenarios with customizable decks."],
-["The Lord of the Rings: The Card Game",2011,3.2,1,2,60,"Cooperative|Deck Building|Solo","Fantasy|Adventure","Cooperative questing through Middle-earth with custom decks."],
-["Paleo",2020,2.4,1,4,60,"Cooperative|Storytelling|Hand Management","Ancient|Exploration","Stone-age humans survive by exploring decks of challenge cards."],
-["Forbidden Island",2010,1.7,2,4,30,"Cooperative|Action Points|Set Collection","Adventure|Exploration","Rescue four treasures before the island sinks."],
-["Forbidden Desert",2013,2.1,2,5,45,"Cooperative|Action Points","Adventure","Find the parts of a flying machine before the sandstorm buries you."],
-["Horrified",2019,2.0,1,5,60,"Cooperative|Action Points|Solo","Horror","Classic movie monsters terrorize a village; save the townsfolk together."],
-["Flash Point: Fire Rescue",2011,2.0,1,6,45,"Cooperative|Action Points|Dice","City","Firefighters rescue victims from a burning building."],
-["Robinson Crusoe: Adventures on the Cursed Island",2012,3.8,1,4,120,"Cooperative|Worker Placement|Storytelling|Solo","Adventure|Exploration","Brutal cooperative survival on a deserted island."],
-["Dead of Winter",2014,3.2,2,5,120,"Cooperative|Social Deduction|Dice|Storytelling","Horror|Post-apocalyptic","Survive a zombie winter while someone may be secretly working against you."],
-["Nemesis",2018,3.4,1,5,180,"Hand Management|Action Points|Storytelling|Solo","Sci-Fi|Horror|Space","Wake on a ship infested with aliens, each player with a hidden goal."],
-["Sleeping Gods",2021,2.8,1,4,120,"Cooperative|Storytelling|Campaign|Solo","Exploration|Adventure|Ocean","A storybook voyage across a strange sea in a steamship."],
-["Detective: A Modern Crime Board Game",2018,2.8,1,5,180,"Cooperative|Deduction|Storytelling","Mystery","Investigate realistic cases with a web database and a ticking clock."],
-["Sherlock Holmes Consulting Detective",1981,2.7,1,8,90,"Cooperative|Deduction|Storytelling|Solo","Mystery|Historical","Solve Victorian cases by visiting addresses around London."],
-["Chronicles of Crime",2018,2.2,1,4,90,"Cooperative|Deduction|Storytelling|Solo","Mystery","App-assisted crime scenes you scan and interrogate."],
-["MicroMacro: Crime City",2020,1.1,1,4,30,"Cooperative|Deduction|Puzzle|Solo","Mystery|City","Find crimes hidden in a huge black-and-white city map."],
-["Exit: The Game",2016,2.3,1,4,60,"Cooperative|Puzzle|Deduction","Mystery","One-time escape-room puzzles in a box."],
-["Turing Machine",2022,2.3,1,4,20,"Deduction|Puzzle|Solo","Science","Crack a secret code by testing punch-card verifiers."],
-["Cryptid",2018,2.2,3,5,50,"Deduction","Mystery|Animals","Each player holds one clue to a creature's location; deduce theirs."],
-["Clue",1949,1.6,2,6,45,"Deduction|Dice","Mystery","Who did it, where, and with what."],
-["Earth",2023,2.6,1,5,60,"Engine Building|Tile Placement|Solo","Nature","Grow an ecosystem of plants and terrain whose abilities chain together."],
-["Meadow",2021,2.4,1,4,90,"Set Collection|Engine Building","Nature|Animals","Explore meadows and collect cards of plants, animals and landscapes."],
-["The Living Forest",2021,2.3,2,4,40,"Deck Building|Push Your Luck","Fantasy|Nature","Nature spirits gather guardian animals to protect a forest from fire."],
-["Flamecraft",2022,2.0,1,5,60,"Worker Placement|Engine Building|Solo","Fantasy|City","Place dragons in shops to enchant a cozy town."],
-["Res Arcana",2019,2.6,2,4,45,"Engine Building|Drafting","Fantasy","Mages build tight engines from just eight cards."],
-["Race for the Galaxy",2007,3.0,2,4,45,"Engine Building|Hand Management|Role Selection","Sci-Fi|Space","Build a galactic empire through fast simultaneous role selection."],
-["Roll for the Galaxy",2014,2.8,2,5,45,"Dice|Engine Building|Role Selection|Bag Building","Sci-Fi|Space","Race for the Galaxy as a dice game: your dice are your workers."],
-["It's a Wonderful World",2019,2.3,1,5,45,"Drafting|Engine Building|Solo","Sci-Fi","Draft and build an empire engine in a post-war future."],
-["Point Salad",2019,1.2,2,6,20,"Set Collection|Drafting","Food","Every card is either a vegetable or a way to score vegetables."],
-["Skull",2011,1.1,3,6,30,"Bluffing|Push Your Luck|Party","Abstract","Pure bluffing with flowers and skulls."],
-["The Mind",2018,1.1,2,4,20,"Cooperative|Party","Abstract","Play cards in ascending order without talking. Just feel it."],
-["Camel Up",2014,1.5,3,8,30,"Racing|Dice|Push Your Luck","Animals|Humor","Bet on a chaotic camel race where camels ride on each other's backs."],
-["Santorini",2016,1.7,2,4,20,"Puzzle","Abstract|Mythology","Build and climb towers; god powers bend the rules."],
-["Hive",2001,2.3,2,2,20,"Puzzle","Abstract|Animals","Surround the opposing queen bee in a board-less abstract."],
-["Onitama",2014,1.7,2,2,15,"Puzzle","Abstract","Martial arts chess where move cards rotate between players."],
-["Blokus",2000,1.2,2,4,20,"Polyomino|Puzzle","Abstract","Fit your pieces onto the board corner to corner."],
-["Qwixx",2012,1.1,2,5,15,"Roll & Write|Dice","Abstract","Quick dice roll-and-write; everyone plays on every roll."],
-["That's Pretty Clever!",2018,1.9,1,4,30,"Roll & Write|Dice|Solo","Abstract","A combo-heavy roll-and-write where colored areas chain bonuses."],
-["Welcome To...",2018,1.8,1,100,25,"Roll & Write|Pattern Building|Solo","City","Plan a 1950s suburb by numbering houses on your sheet."],
-["Railroad Ink",2018,1.6,1,6,30,"Roll & Write|Route Building|Network Building|Solo","Trains|City","Draw roads and rails to connect exits on your grid."],
-["Bohnanza",1997,1.6,2,7,45,"Trading|Negotiation|Hand Management|Set Collection","Farming|Humor","Plant, trade and harvest beans; you can't reorder your hand."],
-["Modern Art",1992,2.3,3,5,45,"Auction","Economic","Art dealers auction paintings and set their market value."],
-["For Sale",1997,1.3,3,6,20,"Auction","Economic|City","Bid on properties, then sell them for checks."],
-["No Thanks!",2004,1.1,3,7,20,"Auction|Push Your Luck","Abstract","Take the card or pay a chip to pass."],
-["6 nimmt!",1994,1.2,2,10,45,"Hand Management","Animals","Avoid taking the sixth card in a row and its bull heads."],
-["Cosmic Encounter",1977,2.5,3,5,90,"Negotiation|Asymmetric|Bluffing","Sci-Fi|Space","Aliens with rule-breaking powers make deals and betrayals."],
-["Dune",2019,3.9,2,6,180,"Negotiation|Asymmetric|Area Control|Bluffing","Sci-Fi","The classic asymmetric fight for Arrakis, reprinted."],
-["War of the Ring: Second Edition",2011,4.2,2,4,180,"Wargame|Asymmetric|Dice|Area Control","Fantasy","The whole Lord of the Rings war, and the Fellowship's quest, on one map."],
-["Star Wars: Rebellion",2016,3.7,2,4,240,"Wargame|Asymmetric|Hidden Movement","Sci-Fi|Space","The Empire hunts for the hidden Rebel base."],
-["Scotland Yard",1983,1.8,3,6,45,"Hidden Movement|Deduction","Mystery|City","Detectives chase the hidden Mr. X across London."],
-["Letters from Whitechapel",2011,2.6,2,6,90,"Hidden Movement|Deduction","Mystery|Horror|Historical","Police hunt Jack the Ripper through Victorian streets."],
-["Mind MGMT: The Psychic Espionage Game",2021,2.4,1,5,60,"Hidden Movement|Deduction|Solo","Sci-Fi|Mystery","Recruiters hide in a city while agents deduce where they are."],
-["Captain Sonar",2016,2.2,2,8,60,"Real-Time|Hidden Movement|Deduction|Party","Ocean","Two submarine crews hunt each other in real time."],
-["Galaxy Trucker",2007,2.4,2,4,60,"Real-Time|Tile Placement|Push Your Luck","Sci-Fi|Space|Humor","Build a ship from sewer pipes in real time, then watch it fall apart."],
-["Magic Maze",2017,1.7,1,8,15,"Real-Time|Cooperative","Fantasy|Humor","Silent real-time co-op where each player controls one direction."],
-["Guillotine",1998,1.2,2,5,30,"Hand Management|Set Collection","Historical|Humor","Darkly funny French Revolution card game: rearrange the line of nobles so you collect the most valuable heads."],
-["Hanamikoji",2013,1.6,2,2,15,"Hand Management|Bluffing","Historical","A tiny two-player game of offers and splits to win over geishas."],
-["The Fox in the Forest",2017,1.5,2,2,30,"Trick Taking","Fantasy|Animals","Two-player trick-taking with fairy-tale powers."],
-["Arboretum",2015,2.1,2,4,30,"Hand Management|Set Collection","Nature","Plant tree paths, but only cards you hold let you score them."],
-["Isle of Skye",2015,2.2,2,5,60,"Tile Placement|Auction","Medieval","Clans price their own tiles and build a kingdom."],
-["Istanbul",2014,2.6,2,5,60,"Set Collection|Economic","Economic|Historical","Merchants move through a bazaar with a trailing line of assistants."],
-["Five Tribes",2014,2.9,2,4,60,"Auction|Set Collection|Puzzle","Fantasy","Move meeples mancala-style across a sultanate."],
-["Pax Pamir: Second Edition",2019,3.8,1,5,120,"Area Control|Negotiation|Hand Management","Historical","Afghan leaders play empires against each other in the Great Game."],
-["Maracaibo",2019,3.9,1,4,120,"Economic|Hand Management|Campaign|Solo","Pirates|Ocean|Historical","Sail the Caribbean, deliver goods and steer the colonial powers."],
-["Lisboa",2017,4.5,1,4,120,"Economic","Historical|City","Rebuild Lisbon after the 1755 earthquake."],
-["Barrage",2019,4.0,1,4,120,"Worker Placement|Economic|Network Building","Economic","Build dams and pipes to sell hydroelectric power."],
-["On Mars",2020,4.6,1,4,150,"Worker Placement|Engine Building|Solo","Sci-Fi|Space","Build a Mars colony, shuttling between orbit and surface."],
-["Anachrony",2017,4.0,1,4,120,"Worker Placement|Economic|Solo","Sci-Fi","Time travel lets you borrow resources from your future self."],
-["Obsession",2018,3.0,1,4,120,"Worker Placement|Deck Building|Set Collection|Solo","Historical","Restore a Victorian estate's reputation and host gatherings."],
-["Lewis & Clark: The Expedition",2013,3.3,1,5,120,"Racing|Hand Management|Deck Building","Exploration|Historical","Race to the Pacific by recruiting characters into your deck."],
-["Dorfromantik: The Board Game",2022,1.6,1,6,40,"Tile Placement|Cooperative|Campaign|Solo","Nature","Calm cooperative tile-laying with a small unlock campaign."],
-["Final Girl",2021,2.3,1,1,45,"Solo|Dice|Hand Management","Horror","Solo horror-movie survival against a killer."],
-["Sea Salt & Paper",2022,1.3,2,4,30,"Set Collection|Push Your Luck|Hand Management","Ocean|Animals","Origami sea creatures; call the round ending at the right moment."],
-["Faraway",2023,1.6,2,6,25,"Set Collection|Hand Management","Fantasy|Exploration","Play cards in order, then score them in reverse."],
-["Descent: Legends of the Dark",2021,3.2,1,4,180,"Cooperative|Campaign|Dungeon Crawl|Dice","Fantasy|Adventure","App-driven fantasy campaign with 3D terrain."],
-["Mice and Mystics",2012,2.3,1,4,90,"Cooperative|Campaign|Dice|Storytelling","Fantasy|Animals","Heroes shrunk to mice adventure through a castle storybook."],
-["The Castles of Mad King Ludwig",2014,2.6,1,4,90,"Tile Placement|Auction|Puzzle|Solo","Historical|Humor","Build an absurd castle of rooms priced by your rivals."],
-["Suburbia",2012,2.8,1,4,90,"Tile Placement|Economic|Solo","City","Grow a town whose buildings boost or drag on each other."],
-["Akropolis",2022,1.8,2,4,30,"Tile Placement|Puzzle","Ancient|City","Stack hex tiles upward to build a Greek city."],
-["The Quest for El Dorado",2017,1.9,2,4,60,"Deck Building|Racing","Exploration|Adventure","Race through the jungle by deck-building your expedition."],
-["Dominant Species",2010,4.0,2,6,240,"Area Control|Worker Placement","Animals|Nature","Animal classes compete for dominance as an ice age approaches."],
-["Food Chain Magnate",2015,4.2,2,5,240,"Economic|Hand Management","Food|City","Run a fast-food chain with a hiring tree and ruthless marketing."],
-["Tzolk'in: The Mayan Calendar",2012,3.7,2,4,90,"Worker Placement","Ancient|Historical","Workers ride giant turning gears that change what they can do."],
-["Lorenzo il Magnifico",2016,3.2,2,4,120,"Worker Placement|Dice|Engine Building","Historical","Renaissance families vie for prestige with dice-valued workers."],
-["Grand Austria Hotel",2015,3.2,2,4,120,"Dice|Drafting|Economic","Historical","Run a Viennese hotel and keep its café guests happy."],
-["Dice Throne",2018,2.2,2,6,45,"Dice|Asymmetric|Hand Management","Fantasy","Heroes duel with Yahtzee-style rolls and unique powers."],
-["Unmatched: Battle of Legends, Volume One",2019,2.1,2,4,40,"Hand Management|Asymmetric","Mythology|Fantasy","Legends from myth and literature fight on a small board."],
-["Kingdom Builder",2012,2.1,2,4,45,"Area Control|Hand Management","Medieval","Place settlements by terrain card to score changing goals."],
-["Tapestry",2019,2.9,1,5,120,"Engine Building|Dice|Solo","Civilization","Advance along tracks to build a civilization from scratch."],
-["Bärenpark",2017,1.7,2,4,45,"Polyomino|Puzzle|Tile Placement","Animals","Build a bear park from enclosure tiles."],
-["Planet Unknown",2022,2.6,1,6,60,"Polyomino|Engine Building|Solo","Sci-Fi|Space","Everyone drafts from a spinning lazy Susan to settle a new planet."],
-["Hues and Cues",2020,1.1,3,10,30,"Party","Abstract","Give one- and two-word clues for a single color on a 480-color grid."],
-["Tiny Towns",2019,2.0,1,6,45,"Puzzle|Pattern Building|Solo","City|Fantasy","Arrange resources on a 4×4 grid to build a town."],
-["Exploding Kittens",2015,1.1,2,5,15,"Push Your Luck|Hand Management|Party","Humor|Animals","Draw until someone draws an exploding kitten."],
-["Disney Villainous",2018,2.2,2,6,60,"Asymmetric|Hand Management","Fantasy","Each villain chases their own goal while the others interfere."],
-["Stardew Valley: The Board Game",2021,2.6,1,4,150,"Cooperative|Action Points|Solo","Farming","Cooperatively restore the community center in Pelican Town."],
-["Wingspan Asia",2022,2.4,1,2,60,"Engine Building|Hand Management|Solo","Animals|Nature","Standalone Wingspan with a new two-player duet mode."],
-];
-const slug = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/&/g,"and").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
-const norm = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/&/g,"and").replace(/[^a-z0-9]+/g," ").trim().replace(/^the /,"");
-const CAT = RAW.map(r=>({id:slug(r[0]),n:r[0],y:r[1],w:r[2],p:[r[3],r[4]],t:r[5],m:r[6].split("|"),c:r[7].split("|"),d:r[8]}));
-const BGG_IDS = {"Guillotine": 116, "Catan": 13, "Ticket to Ride": 9209, "Ticket to Ride: Europe": 14996, "Carcassonne": 822, "Pandemic": 30549, "Pandemic Legacy: Season 1": 161936, "Wingspan": 266192, "Azul": 230802, "7 Wonders": 68448, "7 Wonders Duel": 173346, "Splendor": 148228, "Codenames": 178900, "Codenames: Duet": 224037, "Dominion": 36218, "Terraforming Mars": 167791, "Gloomhaven": 174430, "Gloomhaven: Jaws of the Lion": 291457, "Spirit Island": 162886, "Scythe": 169786, "Everdell": 199792, "Agricola": 31260, "Puerto Rico": 3076, "Power Grid": 2651, "Brass: Birmingham": 224517, "Brass: Lancashire": 28720, "Ark Nova": 342942, "Dune: Imperium": 316554, "Root": 237182, "Cascadia": 295947, "Harmonies": 414317, "Patchwork": 163412, "Sagrada": 199561, "Kingdomino": 204583, "Love Letter": 129622, "The Crew: The Quest for Planet Nine": 284083, "Mysterium": 181304, "Dixit": 39856, "King of Tokyo": 70323, "Lost Ruins of Arnak": 312484, "Great Western Trail": 193738, "Concordia": 124361, "The Quacks of Quedlinburg": 244521, "Viticulture Essential Edition": 183394, "The Castles of Burgundy": 84876, "Twilight Imperium: Fourth Edition": 233078, "Twilight Struggle": 12333, "Arkham Horror: The Card Game": 205637, "Eldritch Horror": 146021, "Betrayal at House on the Hill": 10547, "Star Realms": 147020, "Sky Team": 373106, "Heat: Pedal to the Metal": 366013, "Cartographers": 263918, "Calico": 283155, "Tokaido": 123540, "Takenoko": 70919, "Jaipur": 54043, "Lost Cities": 50, "Hanabi": 98778, "Coup": 131357, "The Resistance: Avalon": 128882, "Secret Hitler": 188834, "Small World": 40692, "Risk": 181, "Blood Rage": 170216, "El Grande": 93, "Tigris & Euphrates": 42, "Through the Ages: A New Story of Civilization": 182028, "A Feast for Odin": 177736, "Caverna: The Cave Farmers": 102794, "Lords of Waterdeep": 110327, "Stone Age": 34635, "Gaia Project": 220308, "Terra Mystica": 120677, "Mage Knight Board Game": 96848, "Forbidden Island": 65244, "Robinson Crusoe: Adventures on the Cursed Island": 121921, "Dead of Winter": 150376, "Nemesis": 167355, "Sherlock Holmes Consulting Detective": 2511, "Turing Machine": 356123, "Clue": 1294, "Earth": 350184, "The Living Forest": 328479, "Race for the Galaxy": 28143, "Santorini": 194655, "Hive": 2655, "Blokus": 2453, "Qwixx": 131260, "Bohnanza": 11, "Modern Art": 118, "For Sale": 172, "No Thanks!": 12942, "6 nimmt!": 432, "Cosmic Encounter": 39463, "Dune": 283355, "War of the Ring: Second Edition": 115746, "Star Wars: Rebellion": 187645, "Scotland Yard": 438, "Galaxy Trucker": 31481, "Pax Pamir: Second Edition": 256960, "Maracaibo": 276025, "Sea Salt & Paper": 367220, "Faraway": 385761, "Akropolis": 357563, "Dominant Species": 62219, "Food Chain Magnate": 175914, "Tzolk'in: The Mayan Calendar": 126163};
-CAT.forEach(g=>{if(BGG_IDS[g.n]) g.bgg=BGG_IDS[g.n];});
-const BY_ID = Object.fromEntries(CAT.map(g=>[g.id,g]));
-const BY_NORM = {}; CAT.forEach(g=>{BY_NORM[norm(g.n)]=g; BY_NORM[norm(g.n.split(":")[0])] ??= g;});
-const ALL_MECH = [...new Set(CAT.flatMap(g=>g.m))].sort();
+/* ---------- Catalog: the BoardGameGeek list ----------
+   games.json holds ~21,600 BGG games (data as of January 2022) plus newer hits added by hand.
+   Row: [bggId, name, year, minP, maxP, minutes, weight×10, weightEstimated, bggRank, avgRating×10, ratingsCount, mechIdx[], catIdx[], blurb?]
+   CORE below is the most-rated slice, so the page works before (or without) the full file. */
+const slug = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/&/g,"and").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/&/g,"and").replace(/[^a-z0-9]+/g," ").trim().replace(/^the /,"");
+const CORE = {"v":1,"asof":"January 2022","mech":["Dice Rolling","Hand Management","Set Collection","Variable Player Powers","Hexagon Grid","Simulation","Card Drafting","Tile Placement","Modular Board","Grid Movement","Area Majority / Influence","Cooperative Game","Roll / Spin and Move","Area Movement","Simultaneous Action Selection","Action Points","Take That","Auction/Bidding","Team-Based Game","Solo / Solitaire Game","Memory","Push Your Luck","Point to Point Movement","Pattern Building","Worker Placement","Deck, Bag, and Pool Building","Player Elimination","Trading","Pick-up and Deliver","Secret Unit Deployment","Network and Route Building","Campaign / Battle Card Driven","Pattern Recognition","Paper-and-Pencil","Role Playing","Scenario / Mission / Campaign Game","Movement Points","Storytelling","Voting","Betting and Bluffing","Action Queue","Trick-taking","Variable Set-up","Events","Stock Holding","Variable Phase Order","Ratio / Combat Results Table","Line of Sight","Zone of Control","Chit-Pull System","Race","Commodity Speculation","Acting","Square Grid","Enclosure","End Game Bonuses","Rock-Paper-Scissors","Line Drawing","Drafting","Contracts","Deduction","Real-Time","Communication Limits","Area-Impulse","Card Play Conflict Resolution","Measurement Movement","Hidden Roles","Income","Time Track","Track Movement","Traitor Game","Hidden Movement","Stacking and Balancing","Market","Victory Points as a Resource","Turn Order: Progressive","Worker Placement, Different Worker Types","Re-rolling and Locking","Action Retrieval","Worker Placement with Dice Workers","Tech Trees / Tech Tracks","Rondel","Connections","Flicking","Semi-Cooperative Game","Three Dimensional Movement","Map Addition","Layering","Grid Coverage","Deck Construction","Critical Hits and Failures","Negotiation","Turn Order: Claim Action","Action/Event","Singing","Turn Order: Stat-Based","Bias","Die Icon Resolution","Narrative Choice / Paragraph","Ownership","Action Drafting","Move Through Deck","Ladder Climbing","Sudden Death Ending","Once-Per-Game Abilities","Programmed Movement","Follow","Hidden Victory Points","Bingo","Alliances","Increase Value of Unchosen Resources","Stat Check Resolution","I Cut, You Choose","Catch the Leader","Map Reduction","Mancala","Minimap Resolution","Roles with Asymmetric Information","Elapsed Real Time Ending","Tug of War","Player Judge","Multiple Maps","Investment","Matching","Command Cards","Chaining","Movement Template","Resource to Move","Speed Matching","Melding and Splaying","Single Loser Game","Auction: Sealed Bid","Score-and-Reset Game","Legacy Game","Interrupts","Static Capture","Targeted Clues","Finale Ending","Highest-Lowest Scoring","Loans","Random Production","Lose a Turn","Map Deformation","Crayon Rail System","Slide/Push","Auction: Dutch","Turn Order: Pass Order","Turn Order: Auction","Constrained Bidding","Auction: Turn Order Until Pass","Pieces as Map","Bribery","Action Timer","King of the Hill","Advantage Token","Physical Removal","Delayed Purchase","Automatic Resource Growth","Prisoner's Dilemma","Moving Multiple Units","Force Commitment","Turn Order: Role Order","Kill Steal","Predictive Bid","Relative Movement","Cube Tower","Hot Potato","Auction: Once Around","Pattern Movement","Impulse Movement","Closed Economy Auction","Multiple-Lot Auction","Turn Order: Random","Order Counters","Different Dice Movement","Induction","Auction: Fixed Placement","Selection Order Bid","Auction: Dutch Priority","Passed Action Token","Auction: Dexterity","Auction: English"],"cat":["Card Game","Wargame","Fantasy","Party Game","Dice","Science Fiction","Fighting","Children's Game","Abstract Strategy","Economic","Animals","World War II","Bluffing","Humor","Adventure","Deduction","Miniatures","Action / Dexterity","Movies / TV / Radio theme","Medieval","Exploration","Real-time","Ancient","Horror","Puzzle","Negotiation","Nautical","Racing","Print & Play","Trivia","City Building","Memory","Novel-based","Territory Building","Sports","Educational","Political","Word Game","Transportation","Modern Warfare","Collectible Components","Mythology","Trains","Video Game Theme","Civilization","Murder/Mystery","Comic Book / Strip","Pirates","Napoleonic","Industry / Manufacturing","Space Exploration","Aviation / Flight","Renaissance","American Civil War","Farming","American West","Post-Napoleonic","Travel","World War I","Spies/Secret Agents","Zombies","Electronic","Environmental","Number","Maze","Book","Age of Reason","Prehistoric","Civil War","Mature / Adult","Mafia","Math","Religious","Arabian","Medical","Music","American Revolutionary War","Pike and Shot","Vietnam War","American Indian Wars","Game System","Korean War","Expansion for Base-game","Fan Expansion"],"g":[[30549,"Pandemic",2008,2,4,45,24,0,106,76,108975,[15,11,1,22,2,27,3],[74],"A team of specialists races to cure four diseases before outbreaks overwhelm the world."],[822,"Carcassonne",2000,2,5,45,19,0,190,74,108738,[10,86,7],[30,19,33],"Draw and place tiles to grow a landscape, then claim cities, roads and fields with meeples."],[13,"Catan",1995,3,4,120,23,0,429,71,108024,[0,4,67,8,30,50,140,27,42],[9,25],"Gather resources, trade with the table, and build roads and settlements across a hex island."],[68448,"7 Wonders",2010,2,7,30,23,0,73,77,89982,[58,1,2,14,3],[22,0,30,44,9],"Draft cards over three ages to build an ancient city and its wonder. Plays 7 in 30 minutes."],[36218,"Dominion",2008,2,4,30,24,0,104,76,81561,[25,156,1,16,42],[0,19],"The original deck-builder: buy cards to grow your deck and your kingdom."],[9209,"Ticket to Ride",2004,2,5,60,18,0,192,74,76171,[6,59,55,1,30,21,2],[42],"Collect colored train cards and claim railway routes across North America."],[178900,"Codenames",2015,2,8,15,13,0,101,76,74419,[62,20,21,18],[0,15,3,59,37],"Spymasters give one-word clues so their team can find secret agents on the grid."],[167791,"Terraforming Mars",2016,1,5,120,33,0,4,84,74216,[58,55,1,4,67,2,19,16,7,75,3],[9,62,49,5,50,33],"Corporations race to make Mars habitable with cards, tiles and production tracks."],[173346,"7 Wonders Duel",2015,2,2,30,22,0,16,81,69472,[6,87,2,103,119],[22,0,30,44,9],"A tight two-player take on 7 Wonders with a military tug-of-war and science race."],[31260,"Agricola",2007,1,5,150,36,0,36,79,66093,[154,157,58,54,1,110,19,92,3,24],[10,9,54],"Grow a 17th-century farm and keep your family fed through the harvests."],[3076,"Puerto Rico",2002,3,5,150,33,0,31,80,65443,[100,55,106,107,110,75,45],[30,9,54],"Choose roles to plant, build, produce and ship goods."],[148228,"Splendor",2014,2,4,30,18,0,183,74,64698,[6,59,50,2],[0,9,52],"Collect gems, buy cards that give permanent discounts, and attract visiting nobles."],[169786,"Scythe",2016,1,5,115,34,0,14,82,64569,[100,64,55,160,9,4,153,36,98,19,80,3,74],[9,6,16,5,33],"Lead a faction in an alternate 1920s Europe of mechs, farms and territory."],[40692,"Small World",2009,2,5,80,24,0,280,72,64559,[10,13,178,0,107,3,42,74],[2,6,33],"Fantasy races conquer a too-small world, then go into decline."],[14996,"Ticket to Ride: Europe",2005,2,5,60,19,0,131,75,63264,[6,82,55,1,30,21,2],[42],"Ticket to Ride with tunnels, ferries and train stations across Europe."],[230802,"Azul",2017,2,4,45,18,0,58,78,62802,[55,23,2,7,92],[8,24,52],"Draft colorful tiles and decorate a palace wall without wasting any."],[70323,"King of Tokyo",2011,2,6,30,15,0,345,72,61099,[6,0,97,153,26,21,77],[4,6,18,5],"Giant monsters roll dice to smash Tokyo and each other."],[129622,"Love Letter",2012,2,4,20,12,0,293,72,59467,[60,1,26,132],[0,15,52],"Sixteen cards of bluffing and deduction."],[2651,"Power Grid",2004,2,6,120,33,0,48,78,58602,[17,149,113,67,73,30,95],[9,49],"Bid on power plants, buy fuel and wire up cities across the map."],[266192,"Wingspan",2019,1,5,70,25,0,23,81,56079,[6,0,58,55,1,2,19],[10,0,35],"Attract birds to your wildlife preserves; each one adds to a growing engine of powers."],[39856,"Dixit",2008,3,6,30,12,0,298,72,54497,[50,14,37,136,38],[0,13,3],"Give clues for dreamlike art cards that are neither too obvious nor too obscure."],[163412,"Patchwork",2014,2,2,30,16,0,94,76,52190,[6,58,88,67,53,7,68,74],[8,24],"Two players race to fill a quilt with patch tiles and buttons."],[84876,"The Castles of Burgundy",2011,2,4,90,30,0,15,81,50549,[0,88,4,2,7,95,79],[4,19,33],"Use dice to pick tiles and develop your estate in the Loire Valley."],[478,"Citadels",2000,2,8,60,21,0,427,71,50181,[100,6,58,66,141,2,161,3],[12,0,30,15,2,19]],[28143,"Race for the Galaxy",2007,2,4,60,30,0,68,78,48906,[106,1,2,14,161,45,3],[0,44,9,5,50],"Build a galactic empire through fast simultaneous role selection."],[110327,"Lords of Waterdeep",2012,2,5,120,25,0,76,78,48655,[59,66,110,99,2,16,92,24],[30,2],"Secret lords hire adventurers to complete quests in a fantasy city."],[174430,"Gloomhaven",2017,1,4,120,39,0,1,87,47827,[40,78,31,64,62,11,90,89,25,9,1,4,133,8,104,35,14,19,37,3],[14,20,2,6,16],"A huge tactical campaign of card-driven combat across a branching fantasy story."],[34635,"Stone Age",2008,2,4,90,25,0,125,76,47245,[59,0,55,2,75,24],[4,9,67],"Prehistoric tribes gather food and resources to grow."],[161936,"Pandemic Legacy: Season 1",2015,2,4,60,28,0,2,86,45041,[15,11,1,133,22,2,27,3],[62,74],"Pandemic as a year-long campaign where your choices permanently change the game."],[65244,"Forbidden Island",2010,2,4,30,17,0,773,68,44513,[15,11,9,1,114,8,28,2,19,3],[14,2],"Rescue four treasures before the island sinks."],[1927,"Munchkin",2001,3,6,120,18,0,4796,59,43750,[1,16,3],[0,2,6,13]],[12333,"Twilight Struggle",2005,2,2,180,36,0,13,83,43052,[93,154,10,31,0,43,1,5,14,103,119],[39,36,1],"The Cold War as a two-player card-driven struggle."],[120677,"Terra Mystica",2012,2,5,150,40,0,18,81,41806,[55,4,67,110,30,80,146,3,42,74],[44,9,2,33],"Asymmetric factions terraform the land to suit themselves."],[98778,"Hanabi",2010,2,5,25,17,0,425,71,41572,[62,11,1,20,2],[0,15,31],"Build a fireworks show together while seeing everyone's cards but your own."],[150376,"Dead of Winter: A Crossroads Game",2014,2,5,120,32,0,142,75,41398,[15,13,0,1,98,21,84,37,27,70,3,38],[12,15,23,60],"Survive a zombie winter while someone may be secretly working against you."],[54043,"Jaipur",2009,2,2,30,15,0,145,75,41188,[6,1,107,73,132,2],[10,0,9],"Two merchants trade goods and camels to become the Maharaja's trader."],[11,"Bohnanza",1997,2,7,45,16,0,473,70,40098,[1,129,91,2,27],[0,54,25],"Plant, trade and harvest beans; you can't reorder your hand."],[10547,"Betrayal at House on the Hill",2004,3,6,60,24,0,551,71,39644,[0,86,8,26,34,37,18,70,3],[14,20,23,16],"Explore a haunted house together until one of you turns traitor."],[50,"Lost Cities",1999,2,2,30,15,0,324,72,39514,[1,21,132,2],[0,20],"Fund expeditions by laying cards in ascending order."],[131357,"Coup",2012,2,6,15,14,0,534,70,38741,[66,20,26,16,3],[12,0,15,3,36],"Bluff about your roles to be the last player with influence."],[147020,"Star Realms",2014,2,2,20,19,0,124,76,38561,[6,25,156,1,16],[0,6,5],"A fast spaceship-combat deck-building duel."],[133473,"Sushi Go!",2013,2,5,15,12,0,481,70,38011,[6,58,55,1,2,14],[0]],[70919,"Takenoko",2011,2,4,45,20,0,301,73,37998,[15,59,0,55,9,4,8,30,23,2,7],[10,62,54,33],"Tend a bamboo garden while a hungry panda eats it."],[170216,"Blood Rage",2015,2,4,90,29,0,35,80,37561,[15,10,13,6,64,58,1,20,14],[2,6,16,41],"Viking clans draft cards and fight for glory before Ragnarök."],[15987,"Arkham Horror",2005,1,8,240,35,0,366,72,37547,[11,0,43,137,1,141,22,34,19,111,3],[14,2,6,23,32]],[41114,"The Resistance",2009,5,10,30,16,0,297,73,37359,[66,20,117,14,18,70,38],[12,0,15,25,3,5,59]],[121921,"Robinson Crusoe: Adventures on the Cursed Island",2012,1,4,120,38,0,69,78,37098,[40,13,11,0,97,43,4,86,36,98,35,19,7,3,24],[14,20,6,32,33],"Brutal cooperative survival on a deserted island."],[204583,"Kingdomino",2016,2,4,15,12,0,234,74,36921,[6,58,7,95],[30,19,33],"Pick domino tiles and build a 5×5 kingdom of matching terrain."],[181304,"Mysterium",2015,2,7,42,19,0,290,73,35241,[62,11,60,137,1,32,38],[15,23,45,3],"A silent ghost sends dream-vision cards to help mediums solve a murder."],[183394,"Viticulture Essential Edition",2015,1,6,90,29,0,25,81,34760,[59,1,19,147,74,24,76],[9,54],"Run a Tuscan vineyard: plant, harvest, make wine and fill orders."],[157354,"Five Tribes",2014,2,4,80,29,0,74,78,34577,[17,148,55,107,115,8,2,53,16,147,3,42,74],[10,73,2,41],"Move meeples mancala-style across a sultanate."],[463,"Magic: The Gathering",1993,2,2,20,31,0,155,75,34393,[6,89,1,134,16],[12,0,40,2,6]],[37111,"Battlestar Galactica: The Board Game",2008,3,6,180,32,0,85,77,33961,[13,0,1,66,104,34,84,18,70,3,42,38],[12,15,18,36,5,50,59]],[126163,"Tzolk'in: The Mayan Calendar",2012,2,4,90,37,0,47,79,33207,[96,55,92,24],[22,44,9,54,41],"Workers ride giant turning gears that change what they can do."],[205637,"Arkham Horror: The Card Game",2016,1,2,120,35,0,24,82,33046,[15,13,62,11,89,25,43,1,142,8,34,35,19,111,3],[14,0,40,2,23,32],"Investigators build decks and face Lovecraftian horrors in a story campaign."],[193738,"Great Western Trail",2016,2,4,150,37,0,12,83,32960,[25,1,99,22,81,2,69,42],[55,10,9],"Drive cattle to Kansas City while improving the trail as you go."],[162886,"Spirit Island",2017,1,4,120,40,0,11,84,32199,[78,10,31,11,43,1,8,2,14,19,3],[66,62,2,6,41,52,33],"Island spirits with very different powers work together to drive off colonizing invaders."],[201808,"Clank!: A Deck-Building Adventure",2016,2,4,60,23,1,70,78,31984,[6,25,55,36,26,22,21,42],[14,2]],[2655,"Hive",2000,2,2,20,23,0,260,73,31719,[54,9,4,150,144,85,7],[8,10],"Surround the opposing queen bee in a board-less abstract."],[181,"Risk",1959,2,6,120,21,0,20905,56,31717,[13,0,26,2],[33,1],"Classic world conquest with armies and dice."],[237182,"Root",2018,2,4,90,37,0,26,81,31553,[40,78,10,13,0,1,22,50,3,42],[10,2,1],"Woodland factions with completely different rules fight for the forest."],[124361,"Concordia",2013,2,5,100,30,0,19,81,31519,[78,154,145,6,25,1,36,22,2,42],[22,9,26],"Trade across the Roman Mediterranean; the cards you buy decide your score."],[194655,"Santorini",2016,2,4,20,17,0,198,74,31502,[9,23,50,53,18,85,3],[8,22,41],"Build and climb towers; god powers bend the rules."],[146021,"Eldritch Horror",2013,1,8,240,33,0,90,78,31482,[15,11,0,22,34,19,111,3],[14,2,6,23,32,57],"Globe-trotting investigators race to stop an Ancient One from waking."],[157969,"Sheriff of Nottingham",2014,3,5,60,16,0,406,71,31463,[39,151,6,1,91,34,2],[12,0,13,19,25,32,3],"Smuggle goods past the sheriff with bribes and bluffs."],[40834,"Dominion: Intrigue",2009,2,6,30,24,0,88,77,31220,[25,1],[0,19]],[31481,"Galaxy Trucker",2007,2,4,60,24,0,212,74,30960,[0,43,61,164,18,7,69],[21,5,50,38],"Build a ship from sewer pipes in real time, then watch it fall apart."],[171,"Chess",1475,2,2,0,37,0,430,72,30810,[9,168,53,135],[8]],[1406,"Monopoly",1933,2,8,180,17,0,21824,44,30803,[17,67,139,141,99,26,12,2,44,69,27],[9,25]],[199561,"Sagrada",2017,1,4,45,19,0,158,75,30298,[59,0,58,23,2,19],[4,24],"Draft dice to build a stained-glass window under color and number rules."],[103343,"A Game of Thrones: The Board Game (Second Edition)",2011,3,6,240,36,0,154,76,30262,[10,13,17,131,64,1,173,26,158,14,3],[12,2,25,32,36,1]],[6249,"Alhambra",2003,2,6,60,21,0,496,70,30156,[6,1,20,2,7],[73,30,19]],[102794,"Caverna: The Cave Farmers",2013,1,7,210,38,0,33,80,29788,[157,110,19,7,92,24],[10,9,2,54],"Dwarves dig caves, forge weapons and farm the forest."],[244521,"The Quacks of Quedlinburg",2018,2,4,45,19,0,61,78,29635,[113,25,0,21,42],[19],"Brew potions by drawing ingredients, and stop before your pot explodes."],[96848,"Mage Knight Board Game",2011,1,4,240,43,0,28,81,29404,[6,11,25,0,9,1,4,8,34,19,3],[14,20,2,6],"A deep, puzzly fantasy conquest best known as a solo game."],[199792,"Everdell",2018,1,4,80,28,0,29,81,28986,[6,55,1,67,19,42,24],[10,0,30,2],"Woodland critters build a city of cards over four seasons."],[39463,"Cosmic Encounter",2008,3,5,120,25,0,157,75,28826,[109,64,1,134,91,158,50,14,16,27,3],[12,25,5,50],"Aliens with rule-breaking powers make deals and betrayals."],[128882,"The Resistance: Avalon",2012,5,10,30,18,0,147,76,28808,[137,66,117,14,18,70,3,38],[12,0,15,2,19,25,3,59],"Loyal knights complete quests while hidden minions sabotage them."],[205059,"Mansions of Madness: Second Edition",2016,1,5,180,27,0,41,80,28516,[13,11,0,1,86,8,34,35,19,111,18,70,3],[14,20,2,6,23,16,45,24],"App-guided Lovecraftian investigations in creepy mansions."],[143884,"Machi Koro",2012,2,4,30,16,0,1046,66,28404,[0,140],[30,4]],[320,"Scrabble",1948,2,4,90,22,0,1916,63,28245,[55,1,53,7],[37]],[132531,"Roll for the Galaxy",2014,2,5,45,28,0,103,76,28215,[78,59,0,106,14,45,3],[44,4,9,5,50],"Race for the Galaxy as a dice game: your dice are your workers."],[35677,"Le Havre",2008,1,5,150,38,0,55,79,27983,[157,55,110,139,99,19,24],[30,9,49,26]],[3955,"BANG!",2002,4,7,40,16,0,1337,65,27824,[1,66,162,26,16,18,3],[55,12,0,15,6]],[124742,"Android: Netrunner",2012,2,2,45,33,0,64,79,27686,[15,89,1,50,29,16,3],[12,0,40,5]],[9220,"Saboteur",2004,3,10,30,13,0,1163,66,27574,[1,66,86,30,16,18,70],[12,0,20,2,3]],[18602,"Caylus",2005,2,5,150,38,0,84,78,27488,[99,92,146,42,24],[30,9,19]],[136063,"Forbidden Desert",2013,2,5,45,21,0,416,71,27189,[15,96,11,9,1,114,8,28,2,19,53,3],[14,2,5],"Find the parts of a flying machine before the sandstorm buries you."],[148949,"Istanbul",2014,2,5,60,26,0,133,76,27078,[59,0,9,8,30,28,50,42,24],[9],"Merchants move through a bazaar with a trailing line of assistants."],[72125,"Eclipse",2011,2,6,180,36,0,59,79,26847,[10,0,9,4,86,8,26,7,45,3],[44,6,5,50,1]],[158899,"Colt Express",2014,2,6,40,18,0,420,71,26846,[40,78,1,20,105,16,75,3],[55,6,42]],[10630,"Memoir '44",2004,2,8,60,23,0,148,76,26840,[10,31,124,0,97,9,1,4,47,8,36,35,5],[16,1,11]],[42,"Tigris & Euphrates",1997,2,4,90,35,0,98,77,26149,[10,82,1,138,67,2,53,7],[22,44,33],"Build and clash kingdoms in ancient Mesopotamia; your weakest color is your score."],[15062,"Shadows over Camelot",2005,3,7,80,26,0,431,71,26085,[62,11,0,1,26,84,2,18,70,3],[14,12,15,2,19,41]],[192291,"Sushi Go Party!",2016,2,8,20,13,0,208,74,25848,[6,58,55,1,2,14],[0,3],"Fast card-drafting of sushi combos, with a menu you pick each game."],[172,"For Sale",1997,3,6,30,13,0,313,72,25665,[17,131,149,1,177],[0,9],"Bid on properties, then sell them for checks."],[182028,"Through the Ages: A New Story of Civilization",2015,2,4,120,44,0,9,84,25605,[15,17,145,6,43,67,16],[0,44,9],"Guide a civilization from antiquity to the modern age with cards."],[187645,"Star Wars: Rebellion",2016,2,4,240,37,0,8,84,25586,[10,13,63,156,0,1,18,3],[68,6,16,18,5,1],"The Empire hunts for the hidden Rebel base."],[224517,"Brass: Birmingham",2018,2,4,120,39,0,3,87,25484,[1,67,139,73,30,132,80,95,42],[9,49,56,38],"Build industries, canals and rails during the Industrial Revolution."],[146508,"T.I.M.E Stories",2015,2,4,90,30,0,184,75,25076,[11,0,101,98,37,3],[14,69,24,5]],[284083,"The Crew: The Quest for Planet Nine",2019,2,5,20,20,0,43,80,24972,[62,11,1,35,41],[0,5,50],"A cooperative trick-taking campaign with tightly limited communication."],[172225,"Exploding Kittens",2015,2,5,15,11,0,3401,60,24784,[1,166,26,21,2,16],[10,0,46,13],"Draw until someone draws an exploding kitten."],[122522,"Smash Up",2012,2,4,45,20,0,939,67,24778,[10,6,64,89,1,16,3,42],[0,2,13,47,5,60]],[16992,"Tsuro",2004,2,8,20,13,0,977,67,24645,[1,30,26,7],[8,2]],[50381,"Cards Against Humanity",2009,4,30,30,13,0,5145,59,24639,[1,120,14],[0,13,69,3,28]],[164928,"Orléans",2014,2,4,90,30,0,27,81,24601,[25,22,75,24],[19,72,57],"Draw followers from a bag and send them to work in medieval France."],[93,"El Grande",1995,2,5,120,31,0,83,78,24477,[100,10,13,17,6,1,20,14,75,95],[19,52],"Grandees compete for regions of medieval Spain."],[2453,"Blokus",2000,2,4,20,12,0,690,69,24049,[54,88,1,7],[8,33],"Fit your pieces onto the board corner to corner."],[153938,"Camel Up",2014,2,8,30,15,0,507,70,23999,[39,0,55,12,69,42],[10,4,27],"Bet on a chaotic camel race where camels ride on each other's backs."],[103885,"Star Wars: X-Wing Miniatures Game",2012,2,2,45,25,0,123,77,23716,[40,90,0,47,126,26,5,14,3],[51,12,40,16,18,5,1]],[104162,"Descent: Journeys in the Dark (Second Edition)",2012,1,5,120,32,0,135,77,23632,[15,11,0,9,1,47,86,8,36,121,35,111,18,3],[14,20,2,6,16]],[147949,"One Night Ultimate Werewolf",2014,3,10,10,13,0,457,71,23167,[66,34,117,70,3,38],[12,0,15,23,3],"A ten-minute werewolf game with no elimination."],[2223,"UNO",1971,2,10,30,11,0,21711,54,23138,[1,141,123,16],[63,0,46,18]],[155426,"Castles of Mad King Ludwig",2014,1,4,90,26,0,150,75,23128,[6,55,112,110,23,2,7,75],[30,19,56,24],"Build an absurd castle of rooms priced by your rivals."],[100423,"Elder Sign",2011,1,8,90,23,0,591,70,23115,[11,0,97,8,77,19,3],[14,0,4,2,6,23,32]],[432,"6 nimmt!",1994,2,10,45,12,0,603,69,22945,[1,162,132,14],[0,63],"Avoid taking the sixth card in a row and its bull heads."],[18,"RoboRally",1994,2,8,120,24,0,477,71,22881,[40,96,9,141,8,105,50,35,14],[64,16,27,5]],[8217,"San Juan",2004,2,4,60,23,0,315,72,22710,[100,106,1,2,45],[0,30,9]],[244992,"The Mind",2018,2,4,20,11,0,695,69,22690,[62,11],[0,63],"Play cards in ascending order without talking. Just feel it."],[123260,"Suburbia",2012,1,4,90,28,0,163,75,22508,[145,6,113,55,4,2,7],[30,9],"Grow a town whose buildings boost or drag on each other."],[154203,"Imperial Settlers",2014,1,4,90,27,0,243,74,22224,[6,59,58,1,19,16,3],[22,0,30,44]],[123540,"Tokaido",2012,2,5,45,17,0,597,70,22188,[55,2,68,69,3,24],[57],"Travel Japan's East Sea Road, collecting experiences along the way."],[2653,"Survive: Escape from Atlantis!",1982,2,4,60,17,0,295,73,22073,[15,0,9,4,114,20,8,29,16],[14,10,12,26]],[108745,"Seasons",2012,2,4,60,27,0,235,74,22006,[6,0,58,1,16,74],[0,2]],[176494,"Isle of Skye: From Chieftain to King",2015,2,5,50,23,0,219,74,21979,[17,113,2,7,75],[9,33]],[100901,"Flash Point: Fire Rescue",2011,2,6,45,20,0,380,72,21950,[15,11,0,9,28,5,19,53,3],[14],"Firefighters rescue victims from a burning building."],[12942,"No Thanks!",2004,3,7,20,11,0,472,71,21901,[17,170,110,21,2],[0],"Take the card or pay a chip to pass."],[77423,"The Lord of the Rings: The Card Game",2011,1,2,60,32,0,140,76,21843,[11,89,43,1,35,19,42],[14,0,40,2,32],"Cooperative questing through Middle-earth with custom decks."],[171623,"The Voyages of Marco Polo",2015,2,4,100,32,0,72,78,21794,[59,0,67,22,127,92,3,42,79],[4,9,19,57]],[164153,"Star Wars: Imperial Assault",2014,1,5,120,32,0,54,80,21791,[0,97,9,47,8,34,35,53,18,3],[14,20,6,16,18,5,1]],[233867,"Welcome To...",2018,1,100,25,18,0,134,76,21538,[108,59,33,23,14,19],[30],"Plan a 1950s suburb by numbering houses on your sheet."],[104006,"Village",2011,2,4,90,31,0,168,75,21167,[10,59,2,92,24,76],[54,19]],[143741,"BANG! The Dice Game",2013,3,8,15,13,0,618,69,21122,[0,66,26,21,77,18,3],[55,12,15,4,6,3]],[28720,"Brass: Lancashire",2007,2,4,120,39,0,20,82,20915,[1,67,139,73,30,132,80,95],[9,49,56,38],"The original Brass, centered on Lancashire's cotton mills and ports."],[107529,"Kingdom Builder",2011,2,4,45,21,0,580,70,20842,[10,125,54,4,8,42],[19,33],"Place settlements by terrain card to score changing goals."],[188834,"Secret Hitler",2016,5,10,45,17,0,201,76,20816,[66,26,18,70,38],[12,0,15,13,3,36,28],"Liberals try to find the hidden leader before fascist policies pass."],[129437,"Legendary: A Marvel Deck Building Game",2012,1,5,60,25,0,196,76,20689,[25,43,84,19,42],[0,46]],[236457,"Architects of the West Kingdom",2018,1,5,80,28,0,81,78,20619,[58,19,3,24],[30,19],"Build up the kingdom while capturing rivals' workers."],[209685,"Century: Spice Road",2017,2,5,45,25,1,274,74,20387,[78,6,59,25,1,110,2],[0,9,19]],[73439,"Troyes",2010,1,4,90,35,0,87,78,20216,[10,0,55,107,141,99,2,19,75,24,79,76],[4,9,19]],[122515,"Keyflower",2012,2,6,120,33,0,80,78,20145,[17,176,148,55,4,8,171,30,99,2,7,147,42,24,76],[30,9,52,33,38]],[177736,"A Feast for Odin",2016,1,4,120,39,0,22,82,20071,[157,0,88,67,21,19,7,146,24],[9,49,19,24],"Vikings hunt, trade and raid, then fit goods onto their home boards."],[8203,"Hey, That's My Fish!",2003,2,4,20,15,0,908,67,20069,[9,4,114,8],[8,10]],[37046,"Ghost Stories",2008,1,4,60,29,0,299,73,20011,[11,0,9,8,101,19,3],[2,6,23,41]],[116,"Guillotine",1998,2,5,30,12,0,1233,65,19942,[6,1,2,16],[0,13],"Darkly funny French Revolution card game: rearrange the line of nobles so you collect the most valuable heads."],[12,"Ra",1999,2,5,60,24,0,189,75,19760,[17,167,170,148,21,2],[22,41]],[161970,"Alchemists",2014,2,4,120,37,0,120,77,19565,[100,6,148,60,55,43,1,75],[15,2]],[166384,"Spyfall",2014,3,8,15,13,0,717,68,19189,[52,62,20,34,117,136,70,38],[12,15,13,3,59]],[220308,"Gaia Project",2017,1,4,150,44,0,7,85,19169,[55,4,67,8,30,19,80,146,3,42,74],[9,5,50,33],"Terra Mystica in space: asymmetric factions colonize planets."],[218603,"Photosynthesis",2017,2,4,60,31,1,491,71,18864,[15,10,96,55,4,67,75],[8,62]],[54998,"Cyclades",2009,2,5,90,28,0,197,75,18846,[10,13,17,176,6,0,2,45],[22,30,44,6,16,41,26],"Bid for the favor of the Greek gods to build two cities."],[5782,"Coloretto",2003,2,5,30,13,0,574,70,18802,[6,21,2],[10,0]],[180263,"The 7th Continent",2017,1,4,1000,32,0,51,80,18792,[11,9,1,86,8,35,19,37,3],[14,0,20,5]],[62219,"Dominant Species",2010,2,6,240,40,0,77,78,18784,[40,10,6,55,9,4,86,16,7,92,3,24],[10,62,67],"Animal classes compete for dominance as an ice age approaches."],[27162,"Kingsburg",2007,2,5,90,24,0,387,72,18736,[0,79],[30,4,2,19]],[5,"Acquire",1964,2,6,90,25,0,292,73,18719,[1,122,73,53,44,7,74],[9,33]],[21790,"Thurn and Taxis",2006,2,4,60,23,0,459,71,18700,[6,1,30,2],[56,38]],[12493,"Twilight Imperium: Third Edition",2005,3,6,240,42,0,86,78,18620,[15,63,0,106,9,4,110,8,26,7,27,45,3,38],[44,25,36,5,50,1]],[198773,"Codenames: Pictures",2016,2,8,15,11,1,355,72,18615,[62,20,21,18],[0,15,3,59]],[2511,"Sherlock Holmes Consulting Detective: The Thames Murders & Other Cases",1982,1,8,120,27,0,109,77,18561,[11,98,19,37],[15,45,32,56,59],"Solve Victorian cases by visiting addresses around London."],[54,"Tikal",1999,2,4,90,28,0,284,73,18518,[15,10,17,9,4,87,86,8,2,7],[20,33]],[1294,"Clue",1949,2,6,45,16,0,8935,57,18448,[60,0,9,20,12,53],[12,15,18,45],"Who did it, where, and with what."],[25613,"Through the Ages: A Story of Civilization",2006,2,4,120,42,0,62,79,18377,[15,17,145,6,1],[44,9]],[170042,"Raiders of the North Sea",2015,2,4,80,26,0,92,78,18313,[59,0,1,24,76],[19,26],"Viking crews raid settlements to impress the chieftain."],[15512,"Diamant",2005,3,8,30,11,0,756,68,18115,[101,21,14],[14,12,20]],[118,"Modern Art",1992,3,5,45,23,0,222,74,18108,[17,181,167,131,149,51,1,74],[0,9],"Art dealers auction paintings and set their market value."],[74,"Apples to Apples",1999,4,10,30,12,0,5282,58,18050,[1,120,14],[0,13,3]],[92828,"Dixit: Odyssey",2011,3,12,30,13,0,237,74,17972,[37,136,38],[0,13,3]],[43570,"Friday",2011,1,1,25,21,0,435,71,17924,[25,1,21,19],[14,0,6,32,47]],[156129,"Deception: Murder in Hong Kong",2014,4,12,20,17,0,205,75,17915,[62,60,43,137,66,37,18,70,42],[12,15,45,3]],[37904,"Formula D",2008,2,10,60,20,0,553,70,17842,[0,174,9,36,26,21,50,12,5,95],[27,34]],[167355,"Nemesis",2018,1,5,180,34,0,17,84,17688,[31,11,0,66,8,26,84,19,18,70,3],[14,23,16,5],"Wake on a ship infested with aliens, each player with a hidden goal."],[124708,"Mice and Mystics",2012,1,4,90,23,0,362,73,17612,[13,11,0,34,37,3],[14,10,20,2,6,16],"Heroes shrunk to mice adventure through a castle storybook."],[205896,"Rising Sun",2018,3,5,120,34,1,93,78,17498,[100,109,10,13,131,39,58,55,106,160,91,2,14,16,45,3,42],[12,2,16,41,25,1]],[171131,"Captain Sonar",2016,2,8,60,22,0,171,76,17423,[9,71,57,61,34,29,5,18],[15,6,26,21],"Two submarine crews hunt each other in real time."],[244522,"That's Pretty Clever!",2018,1,4,30,19,0,136,76,17383,[0,58,138,33,77,19],[4],"A combo-heavy roll-and-write where colored areas chain bonuses."],[113924,"Zombicide",2012,1,6,60,26,0,526,71,17279,[15,11,0,9,1,8,26,35,3],[23,16,60]],[209778,"Magic Maze",2017,1,8,15,17,0,546,70,17263,[62,11,118,9,86,8,61,19,3],[20,2,64,21],"Silent real-time co-op where each player controls one direction."],[160477,"Onitama",2014,2,2,20,17,0,265,74,17194,[9,1,168,53,135],[8],"Martial arts chess where move cards rotate between players."],[25669,"Qwirkle",2006,2,4,45,17,0,850,68,17192,[1,23,7],[8]],[127023,"Kemet",2012,2,5,120,29,0,112,77,17188,[15,10,13,6,64,1],[22,16,41,1]],[28023,"Jamaica",2007,2,6,60,17,0,527,71,17111,[0,1,50,12,14],[26,47,27]],[163967,"Tiny Epic Galaxies",2015,1,5,45,21,0,287,74,17107,[6,0,55,106,77,19,16,69,45,3],[4,5,50]],[239188,"Chronicles of Crime",2018,1,4,90,22,0,174,77,17103,[11,35,19,37],[14,15,45],"App-assisted crime scenes you scan and interrogate."],[118048,"Targi",2012,2,2,60,24,0,127,76,16975,[6,55,8,2,75,24],[0]],[194594,"Dice Forge",2017,2,4,45,24,1,363,73,16942,[6,25,0,140],[22,4,2,41]],[312484,"Lost Ruins of Arnak",2020,1,4,120,29,0,34,81,16860,[6,25,101,104,127,19,75,24],[14,22,20,57],"Explore a jungle island by mixing deck-building with worker placement."],[62871,"Zombie Dice",2010,2,99,20,11,0,2182,62,16809,[0,97,21,77],[4,23,13,3,60]],[24480,"The Pillars of the Earth",2006,2,4,120,28,0,323,73,16786,[43,172,24,76],[9,19,32,72]],[147151,"Concept",2013,4,12,40,15,0,825,68,16763,[62,18],[15,3]],[216132,"Clans of Caledonia",2017,1,4,120,35,0,52,80,16721,[51,59,0,73,8,30,19,146,3,42],[9,54],"Scottish clans farm, trade and export whisky and cheese."],[263918,"Cartographers",2019,1,100,45,19,0,111,77,16702,[108,88,57,33,19,53],[2,33],"Draw terrain shapes on your map to meet the queen's edicts."],[224037,"Codenames: Duet",2017,2,2,30,13,0,178,75,16699,[62,11,21],[0,15,59,37],"The cooperative two-player version of Codenames."],[92415,"Skull",2011,3,6,45,11,0,395,72,16516,[17,1,26],[12,0,3],"Pure bluffing with flowers and skulls."],[258,"Fluxx",1997,2,6,30,14,0,9240,57,16504,[1,2],[0]],[127398,"Legends of Andor",2012,2,4,90,27,0,437,72,16283,[13,11,0,35,3],[14,2,6,24]],[760,"Battle Line",2000,2,2,30,19,0,244,74,16169,[64,1,129,2],[22,0,15]],[21763,"Mr. Jack",2006,2,2,30,22,0,572,70,16104,[58,9,4,3],[15,45]],[9674,"Ingenious",2004,1,4,45,19,0,464,71,16052,[1,138,23,18,7],[8]],[233078,"Twilight Imperium: Fourth Edition",2017,3,6,480,43,0,5,87,16025,[100,10,63,0,106,9,4,153,8,80,27,45,3,38],[44,9,20,25,36,5,50,1],"An all-day galactic empire game of politics, trade and war."],[113294,"Escape: The Curse of the Temple",2012,1,5,10,15,0,587,70,15960,[11,0,118,9,8,21,77,61,12,19,7],[17,14,4,61,20,21]],[291457,"Gloomhaven: Jaws of the Lion",2020,1,4,120,36,0,6,87,15918,[40,78,31,62,11,90,89,9,1,4,133,47,104,35,14,19,3],[14,20,2,6,16],"A smaller Gloomhaven with a guided tutorial campaign; the friendliest way in."],[34219,"Biblios",2007,2,4,30,17,0,388,72,15861,[17,149,6,51,1,2],[0,19,72]],[144733,"Russian Railroads",2013,2,4,120,34,0,97,78,15840,[55,24],[49,42]],[63888,"Innovation",2010,2,4,60,27,0,343,73,15785,[154,1,87,129,16,80,45],[0,44]],[254640,"Just One",2018,3,7,20,10,0,144,76,15777,[62,11],[3,37],"Everyone writes a one-word clue; duplicates cancel out."],[169426,"Roll Player",2016,1,4,90,23,1,206,75,15631,[6,0,58,34,2,3],[4,2]],[102680,"Trajan",2011,2,4,120,36,0,100,78,15574,[13,6,1,115,2],[22,36]],[188,"Go",-2200,2,2,180,39,0,185,76,15513,[54,22,53],[8]],[115746,"War of the Ring: Second Edition",2012,2,4,180,42,0,10,85,15498,[10,13,31,64,0,43,1,71,36,5,18,42],[14,2,6,16,32,33,1],"The whole Lord of the Rings war, and the Fellowship's quest, on one map."],[217372,"The Quest for El Dorado",2017,2,4,60,19,0,146,76,15430,[6,25,9,1,4,8,50],[14,20,27],"Race through the jungle by deck-building your expedition."],[175914,"Food Chain Magnate",2015,2,5,240,42,0,32,81,15406,[6,156,67,73,8,30,14],[9,49],"Run a fast-food chain with a hiring tree and ruthless marketing."],[180974,"Potion Explosion",2015,2,4,45,18,1,462,72,15275,[32,2,16,42],[2,24]],[3,"Samurai",1998,2,4,60,25,0,231,74,15203,[10,1,4,104,2,7],[8,19]],[102652,"Sentinels of the Multiverse",2011,2,5,60,25,0,451,72,15191,[11,1,19,3],[0,46,6]],[229853,"Teotihuacan: City of Gods",2018,1,4,120,23,1,71,79,15163,[13,81,2,19,7,69,42,79],[22]],[38453,"Space Alert",2008,1,5,30,29,0,248,74,15159,[40,13,11,118,1,61,14,19],[61,21,5,50]],[209010,"Mechs vs. Minions",2016,2,4,120,32,1,53,80,15119,[40,96,6,11,0,8,105,34,144,3],[2,6,16,43]],[140934,"Arboretum",2015,2,4,30,21,0,281,74,15109,[1,23,2,7],[12,0],"Plant tree paths, but only cards you hold let you score them."],[438,"Scotland Yard",1983,3,6,45,18,0,1311,65,15049,[71,22,29,18],[15,57],"Detectives chase the hidden Mr. X across London."],[9217,"Saint Petersburg",2004,2,4,60,25,0,332,73,15003,[6,67,2],[66,0,30,9]],[160499,"King of New York",2014,2,6,40,18,0,677,69,14940,[13,6,0,97,153,26,21,77,16],[4,6,18,5]],[316554,"Dune: Imperium",2020,1,4,120,30,0,21,83,14897,[6,64,25,160,19,16,75,3,24],[18,32,36,5],"Deck-building plus worker placement in a fight for control of Arrakis."],[77130,"Sid Meier's Civilization: The Board Game",2010,2,4,240,38,0,289,74,14851,[6,25,9,1,8,56,53,80,27,3],[30,44,20,25,43]],[43443,"Castle Panic",2009,1,6,60,17,0,1096,66,14839,[31,11,0,1,19,27],[2,6,19]],[555,"The Princes of Florence",2000,2,5,100,33,0,204,75,14776,[17,55,88,7,74],[30,52]],[823,"The Lord of the Rings",2000,2,5,90,26,0,933,67,14750,[11,0,1,2,3],[14,2,32]],[2471,"Zombies!!!",2001,2,6,90,16,0,6683,58,14720,[0,9,1,8,12],[20,6,23,16,18,60]],[182874,"Grand Austria Hotel",2015,2,4,120,32,0,78,79,14715,[100,145,59,0,55,1,104,2,3,42],[9],"Run a Viennese hotel and keep its café guests happy."],[131835,"Boss Monster: The Dungeon Building Card Game",2013,2,4,30,18,0,2089,63,14706,[1,26,16,3],[0,2,43]],[43111,"Chaos in the Old World",2009,3,4,120,31,0,138,77,14669,[15,10,13,0,43,1,34,16,3],[2,6,23,41,1]],[172287,"Champions of Midgard",2015,2,4,90,23,0,107,78,14630,[0,2,3,24],[14,4,2,6,19,41]],[155821,"Inis",2016,2,4,90,29,0,102,78,14557,[100,10,13,31,6,58,1,153,86,8,45,42],[0,20,6,19,16,41],"Celtic clans vie to be crowned on the island of Inis."],[155703,"Evolution",2014,2,6,60,24,0,511,71,14543,[15,1,21,29,5,14,16],[10,0,35,62,6,67,28]],[41,"Can't Stop",1980,2,4,30,12,0,753,68,14493,[0,21],[4]],[48726,"Alien Frontiers",2010,2,4,90,26,0,264,74,14492,[10,6,0,79],[4,5]],[225694,"Decrypto",2018,3,8,45,18,0,99,78,14481,[62,136,18],[15,3,59,37],"Send coded clues to your team without letting rivals crack the code."],[1917,"Stratego",1946,2,2,45,19,0,2675,61,14473,[9,20,29,53],[8,12,15,31,48]],[811,"Rummikub",1977,2,4,60,18,0,1642,64,14449,[129,2,7],[8,0,63]],[59959,"Letters from Whitechapel",2011,2,6,90,26,0,291,74,14403,[71,20,22,29,18],[12,15,45,56],"Police hunt Jack the Ripper through Victorian streets."],[63268,"Spot it!",2009,2,8,15,11,0,1182,66,14329,[32,128],[0,7,35,3,21,34]],[156009,"Port Royal",2014,2,5,50,15,0,478,71,14321,[6,59,21,2],[0,9,26,47]],[27588,"Zooloretto",2007,2,5,45,19,0,823,68,14271,[2,7],[10]],[286096,"Tapestry",2019,1,5,120,29,0,246,75,14243,[10,6,0,88,1,4,67,86,19,53,80,7,3],[44],"Advance along tracks to build a civilization from scratch."],[12692,"Gloom",2005,2,4,60,16,0,1889,63,14232,[1,87,141,37,16],[0,23,13]],[46213,"Telestrations",2009,4,8,30,10,0,277,74,14111,[33],[13,3,21],"Draw-and-guess telephone."],[199042,"Harry Potter: Hogwarts Battle",2016,2,4,60,25,1,309,74,14072,[11,25,35,3],[0,2,18,32]],[285774,"Marvel Champions: The Card Game",2019,1,4,90,27,0,37,82,14032,[11,89,1,35,19,3,42],[0,40,46],"Superheroes team up against villain scenarios with customizable decks."],[262712,"Res Arcana",2019,2,4,60,26,0,118,77,13955,[6,1,50,132,16,146,3],[0,2],"Mages build tight engines from just eight cards."],[219513,"Bärenpark",2017,2,4,45,17,0,304,74,13926,[6,88,2,7],[10,24],"Build a bear park from enclosure tiles."],[172818,"Above and Below",2015,2,4,90,23,0,283,74,13906,[15,0,98,2,37,27],[14,30,9,20,2,54,25]],[198994,"Hero Realms",2016,2,4,30,21,1,218,76,13901,[89,25,1,16],[0,2,6]],[20100,"Wits & Wagers",2005,3,7,25,12,0,667,69,13898,[39,33],[12,3,29]],[140620,"Lewis & Clark: The Expedition",2013,1,5,120,33,0,228,75,13883,[78,6,25,1,50,127,19,69,24],[55,20],"Race to the Pacific by recruiting characters into your deck."],[27627,"Talisman: Revised 4th Edition",2007,2,6,90,22,0,1573,65,13883,[0,34,12,16,3],[14,20,2,6]],[215,"Tichu",1991,4,4,60,23,0,186,76,13882,[1,102,163,18,41],[0]],[199478,"Flamme Rouge",2016,2,4,45,17,0,213,75,13875,[113,1,8,105,50,5,14,69],[27,34],"Cycling race where you manage two riders' energy decks."],[191189,"Aeon's End",2016,1,4,60,29,1,65,80,13837,[6,11,25,156,1,19,45,3,42],[0,2,6,5]],[21241,"Neuroshima Hex! 3.0",2006,1,4,30,26,0,296,74,13802,[10,82,9,1,4,47,26,19,18,7,3],[6,24,5]],[29368,"Last Night on Earth: The Zombie Game",2007,2,6,90,23,0,769,69,13734,[0,1,8,12,18,3],[6,23,16,60]],[176189,"Zombicide: Black Plague",2015,1,6,180,28,0,195,77,13708,[11,0,8,35,75,3],[14,2,6,23,19,16,60]],[161417,"Red7",2014,2,4,30,16,0,720,69,13659,[1,26,2,42],[0,63]],[221107,"Pandemic Legacy: Season 2",2017,2,4,60,22,1,42,81,13644,[11,1,133,28,22,2,27,3],[62,20,74]],[97207,"Dungeon Petz",2011,2,4,90,35,0,241,74,13491,[17,1,14,24],[10,2,13]],[521,"Crokinole",1876,2,4,30,13,0,63,80,13453,[83,18],[17]],[155362,"Ca$h 'n Guns (Second Edition)",2014,4,8,30,13,0,748,69,13377,[6,26,14,16,3],[12,6,13,70,25,3]],[91536,"Quarriors!",2011,2,4,30,20,0,945,68,13371,[6,25,0],[4,2,6]],[278,"Catan Card Game",1996,2,2,120,25,0,1028,67,13320,[6,0,1,27],[0,30,33]],[185343,"Anachrony",2017,1,4,120,40,0,46,81,13318,[0,19,119,92,3,24,76],[9,5],"Time travel lets you borrow resources from your future self."],[19857,"Glory to Rome",2005,2,5,60,29,0,223,75,13278,[55,106,1,2,103,45],[22,0,30,9]],[45,"Perudo",1800,2,6,30,13,0,727,69,13220,[39,0,26],[12,4,18,3]],[45315,"Dungeon Lords",2009,2,4,90,35,0,288,74,13169,[40,1,14,7,24],[9,2,6,13]],[25292,"Merchants & Marauders",2010,2,4,180,32,0,294,74,13149,[15,13,96,0,43,28,50,3,42],[14,6,26,77,47,38]],[20551,"Shogun",2006,3,5,120,34,0,216,75,13133,[40,10,13,17,165,14,45],[9,19,33]],[265736,"Tiny Towns",2019,1,6,60,20,0,342,73,13116,[108,55,106,88,23,26,19,75,45,3,42],[8,10,30],"Arrange resources on a 4×4 grid to build a town."],[221194,"Dinosaur Island",2017,1,4,120,30,1,151,77,13114,[15,0,67,2,7,24],[10,9,5]],[503,"Through the Desert",1998,2,5,45,22,0,524,71,13100,[125,82,54,4,107,30],[8,10,73]],[191862,"Imhotep",2016,2,4,40,25,1,444,72,13066,[10,55,8,2,24],[22,38]],[83330,"Mansions of Madness",2011,2,5,180,32,0,412,73,13055,[13,0,1,8,28,34,35,18,3],[14,20,2,6,23,16,45,24]],[171668,"The Grizzled",2015,2,5,30,17,0,449,72,13051,[62,11,1,101,21,3],[0,58]],[256382,"Disney Villainous",2018,2,6,50,22,0,650,70,12993,[1,16,3],[0,2,19,18,41,32,47],"Each villain chases their own goal while the others interfere."],[158600,"Hanamikoji",2013,2,2,15,16,0,211,75,12972,[6,160,1,112,119],[0,19,43],"A tiny two-player game of offers and splits to win over geishas."],[125618,"Libertalia",2012,2,6,60,22,0,458,72,12942,[40,1,2,14,16,161,45],[0,47]],[247763,"Underwater Cities",2018,1,4,150,32,0,45,81,12751,[55,1,67,30,19,95,24],[0,30,44,49,26,5],"Build a network of domes on the sea floor."],[119890,"Agricola: All Creatures Big and Small",2012,2,2,30,24,0,306,74,12748,[157,54,110,7,24],[10,54]],[197376,"Charterstone",2017,1,6,75,31,1,372,73,12748,[6,113,1,133,35,19,24],[30,9,19]],[2243,"Yahtzee",1956,2,10,30,12,0,21632,54,12725,[0,33,21,77,2],[7,46,4,18,75,57]],[43015,"Hansa Teutonica",2009,2,5,90,31,0,132,77,12654,[15,10,55,30,99,80],[19]],[2452,"Jenga",1983,1,8,20,11,0,10523,56,12641,[155,130,72],[17,3]],[266524,"PARKS",2019,1,5,60,22,0,116,78,12639,[6,59,8,2,19,69,92,24],[14,10,62,57],"Hike through the seasons visiting US national parks."],[71721,"Space Hulk: Death Angel – The Card Game",2010,1,6,60,24,0,655,70,12575,[40,11,0,1,101,19,3],[0,6,5]],[25554,"Notre Dame",2007,2,5,75,28,0,316,73,12568,[10,6,22],[9,52]],[181279,"Fury of Dracula (Third/Fourth Edition)",2015,2,5,180,29,1,245,75,12474,[71,22,127,29,18,3],[14,15,6,23,32]],[150312,"Welcome to the Dungeon",2013,2,4,30,12,0,1186,66,12470,[39,20,26,21],[12,0,2,6]],[483,"Diplomacy",1959,2,7,360,34,0,657,70,12447,[10,13,91,26,158,14],[12,25,36,56,1,58]],[31627,"Ticket to Ride: Nordic Countries",2007,2,3,60,20,0,164,76,12351,[6,1,30,2],[42]],[2397,"Backgammon",-3000,2,2,30,20,0,1331,65,12302,[154,39,0,12,69],[8,4]],[69789,"Ascension: Deckbuilding Game",2010,1,4,30,22,0,640,70,12286,[6,25,1],[0,2]],[66188,"Fresco",2010,2,4,60,26,0,368,73,12263,[40,9,73,2,14,95],[52]],[133038,"Pathfinder Adventure Card Game: Rise of the Runelords – Base Set",2013,1,4,90,27,0,486,72,12262,[11,25,0,1,101,34,35,19,3],[14,0,2,6]],[169654,"Deep Sea Adventure",2014,2,6,30,12,0,678,70,12191,[28,21,12],[4,20,26,3]],[34119,"Tales of the Arabian Nights",2009,1,6,120,22,0,480,72,11983,[0,98,22,34,19,37,3],[14,73,20,2,57]],[146652,"Legendary Encounters: An Alien Deck Building Game",2014,1,5,60,27,0,121,78,11943,[6,11,25,43,66,26,19,18,3],[0,6,23,18,5]],[8098,"Jungle Speed",1997,2,8,10,11,0,1460,65,11915,[32,128],[17,0,3,21]],[4390,"Carcassonne: Hunters and Gatherers",2002,2,5,35,19,0,525,71,11738,[10,86,7],[67]],[176396,"Quadropolis",2016,2,4,60,22,1,391,73,11713,[1,23,2,7,76],[30,62]],[37380,"Roll Through the Ages: The Bronze Age",2008,1,4,45,18,0,778,69,11687,[59,0,97,43,33,21,77,19],[22,30,44,4]],[200680,"Agricola (Revised Edition)",2016,1,4,120,32,1,75,80,11678,[54,1,24,154,157,58,110,19,18,92,3],[10,9,54]],[172386,"Mombasa",2015,2,4,150,38,1,89,79,11641,[40,10,6,25,1,122,14,44,92,3],[9]],[274960,"Point Salad",2019,2,6,30,12,0,383,73,11629,[6,2],[0],"Every card is either a vegetable or a way to score vegetables."],[155987,"Abyss",2014,2,4,60,24,0,359,73,11583,[17,6,1,20,21,2],[0,2,41,5]],[699,"HeroQuest",1989,2,5,90,22,0,595,72,11566,[0,97,9,8,34,12,35,53,18,3],[14,20,2,6]],[126042,"Nations",2013,1,5,200,35,0,175,76,11485,[6,43,146,3],[0,44,9]],[17226,"Descent: Journeys in the Dark",2005,2,5,240,33,0,411,73,11449,[0,9,8,34,18,3],[14,20,2,6,16]],[1198,"SET",1988,1,20,30,17,0,1477,65,11387,[32,61,2,128],[0,24,21]],[17133,"Railways of the World",2005,2,6,120,30,0,149,77,11352,[15,6,82,55,4,67,139,30,99,28,7,147],[42,38,43]],[1219,"Labyrinth",1986,2,4,20,14,0,1665,64,11328,[142,8,30,22,7],[7,64,24]],[2921,"The Game of Life",1960,2,6,60,12,0,21823,43,11324,[12,5],[7,9,61]],[269385,"The Lord of the Rings: Journeys in Middle-Earth",2019,1,5,120,35,1,91,80,11221,[31,11,25,8,34,35,19,111,3],[14,2,6,16,32]],[31594,"In the Year of the Dragon",2007,2,5,100,31,0,333,73,11189,[100,43,1,95],[9,19]],[128621,"Viticulture",2013,2,6,90,29,0,214,76,11181,[1,75,24],[9,54]],[242302,"Space Base",2018,2,5,60,20,1,194,76,11160,[6,0,140,16],[4,5,50]],[266810,"Paladins of the West Kingdom",2019,1,4,120,29,1,67,80,11140,[6,73,19,24,76],[19]],[42215,"Tobago",2009,2,4,60,21,0,523,71,11136,[60,9,1,4,8,21],[14,15,20]],[1111,"Taboo",1989,4,10,20,13,0,2017,63,11133,[62,18],[3,21,37]],[125153,"The Gallerist",2015,1,4,150,40,0,57,81,11116,[51,122,2,19,24],[9]],[281259,"The Isle of Cats",2019,1,4,90,26,1,96,79,11116,[6,58,88,107,67,23,2,19,53,7,95],[10,2,24]],[9216,"Goa",2004,2,4,90,34,0,203,76,11083,[17,167,1,21,80],[9,54,26,52]],[138161,"Firefly: The Game",2013,1,4,240,29,0,377,74,10949,[13,6,0,28,19,16,27,3],[14,18,5,50,57]],[221965,"The Fox in the Forest",2017,2,2,30,15,0,447,72,10879,[1,41],[10,0,2],"Two-player trick-taking with fairy-tale powers."],[206718,"Ethnos",2017,2,6,60,23,1,258,75,10875,[10,6,1,2],[2]],[233371,"Clank! In! Space!: A Deck-Building Adventure",2017,2,4,90,26,1,105,78,10760,[6,25,8,26,22,21],[5]],[203993,"Lorenzo il Magnifico",2016,2,4,120,32,0,95,79,10745,[6,0,3,24,79],[52],"Renaissance families vie for prestige with dice-valued workers."],[136888,"Bruges",2013,2,4,60,27,0,286,74,10698,[0,1],[0,30,9,52]],[276025,"Maracaibo",2019,1,4,120,39,0,40,82,10683,[59,55,43,1,67,36,98,22,35,2,19,44,103,80,69,42],[9,20,47],"Sail the Caribbean, deliver goods and steer the colonial powers."],[90137,"Blood Bowl: Team Manager – The Card Game",2011,2,4,120,23,0,328,74,10642,[10,6,25,0,1],[0,2,6,34]],[131260,"Qwixx",2012,2,5,15,11,0,816,69,10637,[108,0,33],[4,71,63],"Quick dice roll-and-write; everyone plays on every roll."],[93260,"Summoner Wars: Master Set",2011,2,4,60,25,0,261,75,10569,[89,0,9,1,111,3],[0,2,6]],[98,"Axis & Allies",1981,2,5,180,30,0,1501,66,10497,[13,0,116,111,18],[9,1,11]],[183840,"Oh My Goods!",2015,2,4,30,18,1,662,70,10431,[40,1,21,2],[0,9,19]],[220877,"Rajas of the Ganges",2017,2,4,75,27,1,143,77,10422,[82,0,30,50,7,24],[4,9,33]],[25821,"The Werewolves of Miller's Hollow",2001,8,18,30,13,0,1105,67,10376,[26,34,18,3,38],[12,15,23,45,3]],[6472,"A Game of Thrones",2003,3,5,180,34,0,515,72,10271,[13,17,43,1,20,173,26,14,3],[12,2,25,32,36,1]],[53953,"Thunderstone",2009,1,5,60,25,0,751,69,10258,[6,25,1],[0,2,6]],[256226,"Azul: Stained Glass of Sintra",2018,2,4,45,24,1,341,74,10250,[6,55,8,23,2,7,92],[8,24,52]],[39683,"At the Gates of Loyang",2009,1,4,120,32,0,321,74,10238,[6,59,67,139,73,2,19],[9,54]],[160851,"Lanterns: The Harvest Festival",2015,2,4,30,16,0,806,69,10188,[1,23,2,7],[]],[220,"High Society",1995,3,5,30,15,0,544,71,10155,[17,149,148],[0]],[97786,"Small World Underground",2011,2,5,90,26,0,445,73,10149,[10,13,0,153,3],[2,6,33]],[9609,"War of the Ring",2004,2,4,120,38,0,139,78,10148,[15,10,13,31,0,1],[14,2,16,32,33,1]],[70149,"Ora et Labora",2011,1,4,180,39,0,152,77,10132,[110,8,30,24,76],[30,9,49,19,72,33]],[257501,"KeyForge: Call of the Archons",2018,2,2,45,23,1,513,72,10123,[1,16],[0,40,2,6]],[150,"PitchCar",1995,2,8,30,11,0,407,73,10023,[83,8,50],[17,7,3,27,34]],[168435,"Between Two Cities",2015,1,7,25,18,0,646,70,10011,[6,58,138,2,14,19,7],[30,48,25]],[287954,"Azul: Summer Pavilion",2019,2,4,45,24,1,137,78,9973,[6,55,23,2,7,92],[8,24]],[22545,"Age of Empires III: The Age of Discovery",2007,2,5,120,31,0,242,75,9968,[10,2,92,24,76],[44,20,52,43]],[19237,"Ca$h 'n Gun$",2005,4,6,30,13,0,1248,66,9899,[26,14,3],[12,0,6,13,70,25,3]],[133848,"Euphoria: Build a Better Dystopia",2013,2,6,60,31,0,446,72,9877,[0,1,50,2,3,24,79],[5]],[68425,"Eminent Domain",2011,2,4,45,25,0,630,70,9867,[6,25,106,1,45],[0,44,5,50]],[194607,"Mystic Vale",2016,2,4,45,22,1,415,73,9857,[25,87,21],[0,2]],[11971,"Cockroach Poker",2004,2,6,20,11,0,1007,68,9856,[1,2,130],[12,0,3]],[188920,"This War of Mine: The Board Game",2017,1,6,120,30,1,159,78,9852,[15,11,0,43,9,98,21,34,35,5,19,37,3,24],[14,20,69,39,43]],[271324,"It's a Wonderful World",2019,1,5,60,23,0,129,78,9844,[6,58,55,1,2,14,19,3],[0,44,9,5],"Draft and build an empire engine in a post-war future."],[117959,"Las Vegas",2012,2,5,30,12,0,530,71,9833,[10,0],[4]],[196340,"Yokohama",2016,2,4,90,31,1,108,78,9830,[59,55,9,8,30,2,42,24,76],[9]],[150658,"Pandemic: The Cure",2014,2,5,30,21,0,400,73,9818,[11,0,1,22,21,77,2,19,3],[4,62,74]],[27833,"Steam",2009,3,5,90,34,0,217,76,9760,[17,139,30,99,28,7],[9,42,38]],[1115,"Poker",1810,2,10,60,25,0,1086,67,9742,[39,26,2],[12,0]],[203420,"Exit: The Game – The Abandoned Cabin",2016,1,6,120,24,1,263,75,9729,[11],[15,24,21]],[245638,"Coimbra",2018,2,4,90,24,1,180,77,9682,[100,17,6,0,55,2,42],[4,52]],[215311,"Downforce",2017,2,6,40,18,0,371,73,9656,[17,39,1,159,163,50,69,3],[27,34],"Bid on cars, race them, and bet on who wins."],[143693,"Glass Road",2013,1,4,80,29,0,285,74,9649,[6,2,14,7,45],[30,9,19]],[139030,"Mascarade",2013,2,13,30,15,0,1232,66,9636,[66,20,3],[12,0,19,3]],[282524,"Horrified",2019,1,5,60,20,0,156,78,9630,[15,11,0,28,22,19,3,42],[23,16,18],"Classic movie monsters terrorize a village; save the townsfolk together."],[91312,"Discworld: Ankh-Morpork",2011,2,4,60,22,0,495,72,9597,[10,0,43,1,66,134,117,16],[12,30,15,2,32]],[73761,"K2",2010,1,5,60,23,0,627,70,9588,[1,26,22,14,19],[20,34]],[155068,"Arcadia Quest",2014,2,4,60,25,0,210,77,9583,[0,9,8,35,16,3],[14,20,2,6,16]],[176920,"Mission: Red Planet (Second Edition)",2015,2,6,90,25,0,302,74,9582,[78,10,13,1,14,16,161],[5]],[141572,"Paperback",2014,2,5,45,19,0,497,72,9556,[6,11,25,156],[0,28,37]],[15818,"Pickomino",2005,2,7,20,11,0,1284,66,9498,[0,21,77],[10,4]],[40398,"Monopoly Deal Card Game",2008,2,5,15,13,0,2192,63,9459,[1,2,16],[0,9]],[146886,"La Granja",2014,1,4,120,35,0,187,76,9458,[10,157,59,0,58,1,107,67,14,3,74],[9,54]],[251247,"Barrage",2019,1,4,120,40,0,44,82,9444,[100,59,55,67,30,19,95,3,42,24],[9,62,49],"Build dams and pipes to sell hydroelectric power."],[4098,"Age of Steam",2002,1,6,120,39,0,126,78,9439,[17,113,82,0,139,30,28,26,35,177,7,147,74],[9,42,38]],[183251,"Karuba",2015,2,4,40,22,1,493,72,9439,[108,82,9,30,50,14,7],[20,24]],[27225,"Bananagrams",2006,1,8,15,14,0,1856,64,9417,[7],[21,37]],[97842,"Last Will",2011,2,5,75,27,0,485,72,9417,[15,1,74,24],[0,9,13]],[127060,"Bora Bora",2013,2,4,120,37,0,230,76,9403,[0,2,24,79],[4]],[30869,"Thebes",2007,2,4,60,22,0,536,71,9359,[22,2,68],[22,20,57]],[173090,"The Game",2015,1,5,20,14,0,1071,67,9350,[62,11,1,19],[0,63]],[63628,"The Manhattan Project",2012,2,5,120,29,0,367,74,9350,[78,58,50,16,24,76],[51,9,6,49,25,28,11]],[205398,"Citadels",2016,2,8,60,26,1,448,73,9278,[100,6,67,141,2,161,3],[12,0,30,2,19]],[246784,"Cryptid",2018,3,5,50,22,0,273,75,9236,[60,4,8,32],[15],"Each player holds one clue to a creature's location; deduce theirs."],[1465,"Wizard",1984,3,6,45,17,0,785,69,9231,[39,1,163,41],[0,2]],[33160,"Endeavor",2009,3,5,90,29,0,326,74,9201,[10,6,1,2,80],[20,26,52]],[175117,"Celestia",2015,2,6,30,15,1,740,70,9196,[39,0,107,21],[14,51,0,2]],[172081,"Burgle Bros.",2015,1,4,90,18,0,270,75,9172,[15,11,0,9,86,8,121,19,53,85,3],[20,64,59]],[177524,"ICECOOL",2016,2,4,30,13,1,911,68,9161,[13,83,16],[17,10,7]],[171499,"Cacao",2015,2,4,45,19,0,589,71,9158,[10,1,86,7],[9,54,33]],[25417,"BattleLore",2006,2,2,60,28,0,401,74,9146,[10,31,124,0,9,1,4,8,3],[2,19,16,1]],[283155,"Calico",2020,1,4,45,22,0,173,78,8485,[54,4,23,35,2,19,7],[8,10,24],"Sew a cozy quilt with patterns that attract cats."],[223321,"Detective: A Modern Crime Board Game",2018,1,5,180,28,0,169,78,8316,[11,19,37],[15,45],"Investigate realistic cases with a web database and a ticking clock."],[161533,"Lisboa",2017,1,4,120,45,0,60,82,7903,[10,6,1,19,7],[30,9,49,36],"Rebuild Lisbon after the 1755 earthquake."],[184267,"On Mars",2020,1,4,150,46,0,56,83,7875,[10,59,156,58,55,1,4,67,36,159,2,19,80,7,45,24],[30,9,20,5,50,33],"Build a Mars colony, shuttling between orbit and surface."],[192135,"Too Many Bones",2017,1,4,120,38,0,39,84,7823,[11,25,0,97,1,127,34,19,111,80,161,3],[14,4,2,6],"Dice-driven RPG battles with heroes you build skill by skill."],[256960,"Pax Pamir: Second Edition",2019,1,5,120,38,0,50,84,6732,[15,10,13,6,1,110,132,5,19],[9,35,25,36,56,59],"Afghan leaders play empires against each other in the Great Game."],[318977,"MicroMacro: Crime City",2020,1,4,45,11,0,227,77,6462,[11,60,35,19,18],[15,45],"Find crimes hidden in a huge black-and-white city map."],[262543,"Wavelength",2019,2,12,45,11,0,408,74,6329,[39,11,50,136,18],[3],"Teams guess where a clue falls on a spectrum between two ideas."],[283355,"Dune",2019,2,6,120,39,0,215,81,4763,[109,10,13,17,151,160,142,163,16,3],[12,6,25,32,36,5,1],"The classic asymmetric fight for Arrakis, reprinted."],[295947,"Cascadia",2021,1,4,45,19,0,188,81,4552,[58,4,23,19,7,42],[8,10,24],"Draft habitat tiles and wildlife tokens to build the Pacific Northwest."],[274637,"Unmatched: Battle of Legends, Volume One",2019,2,4,40,21,0,266,79,4451,[15,13,64,1,47,22,16,18,3],[0,2,6,16,41,32],"Legends from myth and literature fight on a small board."],[300531,"Paleo",2020,1,4,60,24,0,329,78,4051,[93,11,25,20,35,14,42],[0,20,67],"Stone-age humans survive by exploring decks of challenge cards."],[231733,"Obsession",2018,1,4,90,30,0,224,83,3048,[6,25,19,7],[56],"Restore a Victorian estate's reputation and host gatherings."],[255984,"Sleeping Gods",2021,1,4,1200,28,0,191,85,2854,[11,43,1,21,19,37],[14,20,26],"A storybook voyage across a strange sea in a steamship."],[324856,"The Crew: Mission Deep Sea",2021,2,5,20,21,0,182,85,2835,[62,11,35,41],[0],"The second Crew campaign, with more flexible mission goals."],[314491,"Meadow",2021,1,4,90,24,0,565,79,2353,[78,6,1,2,76],[10,0,62,20],"Explore meadows and collect cards of plants, animals and landscapes."],[322708,"Descent: Legends of the Dark",2021,1,4,180,32,0,833,80,2087,[11,0,9,8,36,34,35,19,3],[14,2,6],"App-driven fantasy campaign with 3D terrain."],[342942,"Ark Nova",2021,1,4,150,37,0,463,87,1495,[6,55,1,4,67,2,19,7,3,42],[10,9,62],"Design a modern zoo and fund conservation projects."],[302520,"Hues and Cues",2020,3,10,30,11,0,2820,69,1073,[60,132,136,75],[15,3],"Give one- and two-word clues for a single color on a 480-color grid."],[329839,"So Clover!",2021,3,6,30,12,0,1582,76,976,[62,11],[3,37],"Write clues that link word pairs on your clover, then the table solves each one."],[240980,"Blood on the Clocktower",2022,5,20,120,30,0,1891,78,911,[66,26,18,3,38],[12,15,23,45,25,3],"Storyteller-run social deduction with rich character powers."],[268201,"Dice Throne",2018,2,6,40,22,0,1669,78,891,[0,16,3],[0,4,2,6],"Heroes duel with Yahtzee-style rolls and unique powers."],[332290,"Stardew Valley: The Board Game",2021,1,4,200,26,0,3474,71,639,[11,0,97,43,22,140,19,42,24],[10,54,43],"Cooperatively restore the community center in Pelican Town."],[295770,"Frosthaven",2022,1,4,120,44,0,4844,68,587,[100,31,62,11,89,25,9,1,4,133,8,104,35,14,19,3],[14,20,2,6,16],"The massive Gloomhaven sequel with an outpost to build between scenarios."],[284653,"Mind MGMT: The Psychic Espionage “Game.”",2021,1,5,75,24,0,2273,82,493,[9,71,22,18,3],[46,15,2,5,59],"Recruiters hide in a city while agents deduce where they are."],[277659,"Final Girl",2021,1,1,45,23,0,2401,86,408,[0,1,28,19,3],[0,23],"Solo horror-movie survival against a killer."],[328479,"Living Forest",2021,2,4,40,23,0,4070,75,284,[25,21,14,7],[22,10,0,2,33],"Nature spirits gather guardian animals to protect a forest from fire."],[258779,"Planet Unknown",2022,1,6,80,26,0,4890,78,178,[6,30,23,14,7,3],[30,49,24,5,50,33],"Everyone drafts from a spinning lazy Susan to settle a new planet."],[336986,"Flamecraft",2022,1,5,60,20,0,9390,79,78,[59,55,1,8,76],[10,0,30,2],"Place dragons in shops to enchant a cozy town."],[357563,"Akropolis",2022,2,4,30,18,0,0,0,0,[7],[22,30,24],"Stack hex tiles upward to build a Greek city."],[0,"Clank!",2016,2,4,60,22,0,0,0,0,[25,21,50],[14,2],"Deck-build into a dragon's lair; make too much noise and you'll get burned."],[0,"Dorfromantik: The Board Game",2022,1,6,40,16,0,0,0,0,[11,35,19,7],[62],"Calm cooperative tile-laying with a small unlock campaign."],[350184,"Earth",2023,1,5,60,26,0,0,0,0,[55,19,7],[62],"Grow an ecosystem of plants and terrain whose abilities chain together."],[0,"Exit: The Game",2016,1,4,60,23,0,0,0,0,[11,60],[45,24],"One-time escape-room puzzles in a box."],[385761,"Faraway",2023,2,6,25,16,0,0,0,0,[1,2],[20,2],"Play cards in order, then score them in reverse."],[414317,"Harmonies",2024,1,4,40,20,0,0,0,0,[23,19,7],[10,62,24],"Stack colored tokens into landscapes that give animals a home."],[366013,"Heat: Pedal to the Metal",2022,1,6,60,22,0,0,0,0,[1,21,50,19],[34],"1960s motor racing driven by cards, speed and engine heat."],[0,"Isle of Skye",2015,2,5,60,22,0,0,0,0,[17,7],[19],"Clans price their own tiles and build a kingdom."],[0,"Railroad Ink",2018,1,6,30,16,0,0,0,0,[30,33,19],[30,42],"Draw roads and rails to connect exits on your grid."],[367220,"Sea Salt & Paper",2022,2,4,30,13,0,0,0,0,[1,21,2],[10,26],"Origami sea creatures; call the round ending at the right moment."],[373106,"Sky Team",2023,2,2,15,17,0,0,0,0,[11,0],[51,24],"Two pilots land a plane by placing dice without talking."],[356123,"Turing Machine",2022,1,4,20,23,0,0,0,0,[60,19],[24],"Crack a secret code by testing punch-card verifiers."],[0,"Wingspan Asia",2022,1,2,60,24,0,0,0,0,[55,1,19],[10,62],"Standalone Wingspan with a new two-player duet mode."]]};
+let CAT=[], BY_ID={}, BY_NORM={}, BY_SLUG={}, ALL_MECH=[], ALL_THEME=[], CHIP_MECH=[], DATA_ASOF="January 2022", DATA_STATE="loading";
+function loadData(J){
+  const M=J.mech, C=J.cat;
+  CAT=J.g.map(r=>{const bgg=r[0]||0, mn=r[3]||1;
+    return {id:bgg?String(bgg):"h-"+slug(r[1]),bgg:bgg||0,n:r[1],y:r[2]||"",p:[mn,Math.max(r[4]||mn,mn)],t:r[5]||0,w:(r[6]||20)/10,west:!!r[7],
+      rank:r[8]||0,avg:(r[9]||0)/10,users:r[10]||0,m:r[11].map(i=>M[i]),c:r[12].map(i=>C[i]),d:r[13]||"",hand:!!r[13]};});
+  BY_ID={}; BY_NORM={}; BY_SLUG={};
+  CAT.forEach(g=>{BY_ID[g.id]=g; const k=norm(g.n); if(!BY_NORM[k])BY_NORM[k]=g; const k2=norm(g.n.split(":")[0]); if(!BY_NORM[k2])BY_NORM[k2]=g; const sl=slug(g.n); if(!BY_SLUG[sl])BY_SLUG[sl]=g;});
+  DATA_ASOF=J.asof||DATA_ASOF; ALL_MECH=M.slice(0,70); ALL_THEME=C.slice(0,50);
+  CHIP_MECH=["Cooperative Game","Worker Placement","Deck, Bag, and Pool Building","Card Drafting","Tile Placement","Area Majority / Influence","Set Collection","Dice Rolling","Network and Route Building","Push Your Luck","Hidden Roles","Deduction","Trick-taking","Auction/Bidding","Variable Player Powers","Solo / Solitaire Game","Legacy Game","Real-Time","Grid Coverage","Pattern Building","Paper-and-Pencil","Trading","Negotiation","Storytelling","Action Points","Scenario / Mission / Campaign Game","Betting and Bluffing"].filter(m=>M.includes(m));
+  recCache=null;
+}
+let recCache=null;
+loadData(CORE);
 
 /* ---------- State ---------- */
-const EXAMPLE = ["catan","ticket-to-ride","wingspan","azul","pandemic","splendor"];
+const EXAMPLE = ["13","9209","266192","230802","30549","148228"];
 const DEFAULT_BGG="Thebigsheck";
 let S = {v:1, example:true, owned:[...EXAMPLE], extra:[], wish:[], bgg:DEFAULT_BGG, custom:{}};
-function fixS(){S.custom=S.custom||{};S.extra=S.extra||[];S.wish=S.wish||[];S.owned=S.owned||[];if(!S.bgg)S.bgg=DEFAULT_BGG;Object.values(S.custom).forEach(g=>{if(g&&g.id)BY_ID[g.id]=g;});}
+function fixS(){S.custom=S.custom||{};S.extra=S.extra||[];S.wish=S.wish||[];S.owned=S.owned||[];if(!S.bgg)S.bgg=DEFAULT_BGG;Object.values(S.custom).forEach(g=>{if(g&&g.id&&!BY_ID[g.id])BY_ID[g.id]=g;});migrate();recCache=null;}
+function migrate(){let ch=false;const fx=a=>[...new Set(a.map(id=>{if(BY_ID[id])return id;const g=BY_SLUG[id];if(g){ch=true;return g.id;}return id;}))];S.owned=fx(S.owned);S.wish=fx(S.wish);if(DATA_STATE==="full"){const keep=[];(S.extra||[]).forEach(n=>{const g=BY_NORM[norm(n)];if(g){if(!S.owned.includes(g.id))S.owned.push(g.id);ch=true;}else keep.push(n);});S.extra=keep;}if(ch)setTimeout(save,0);}
 function keepCustom(id){const g=BY_ID[id]; if(g&&g.custom){ if(owns(id)||S.wish.includes(id)) S.custom[id]=g; else delete S.custom[id]; }}
-const F = {players:"any", time:"any", weight:"any", q:"", mech:new Set()};
+const F = {players:"any", time:"any", weight:"any", q:"", mech:new Set(), limit:48};
 let db=null, uid=null, ai={state:"idle", items:[], err:""};
 const LS="tabletop-shelf-v1";
 try{const s=JSON.parse(localStorage.getItem(LS)||"null"); if(s&&s.v===1){S=s;}}catch(e){}
@@ -460,7 +302,6 @@ function toggleWish(id){
 }
 
 /* ---------- Search every board game (via Claude) ---------- */
-const ALL_THEME=[...new Set(CAT.flatMap(g=>g.c))].sort();
 let LK={q:"",state:"idle",items:[],err:""};
 async function lookup(q){
   q=(q||"").trim(); if(q.length<2){toast("Type at least two letters to search.");return;}
@@ -516,18 +357,21 @@ function hobbyHTML(){
   else if(fresh&&LK.state==="off") body=`<p class="status">Searching all games needs Claude, which isn't available in this view. <a target="_blank" rel="noopener" href="https://boardgamegeek.com/geeksearch.php?action=search&objecttype=boardgame&q=${enc(q)}">Search BoardGameGeek directly ↗</a></p>`;
   else if(fresh&&LK.state==="empty") body=`<p class="status">No games found for “${esc(LK.q)}”. Check the spelling, or <a target="_blank" rel="noopener" href="https://boardgamegeek.com/geeksearch.php?action=search&objecttype=boardgame&q=${enc(q)}">search BoardGameGeek directly ↗</a>.</p>`;
   else if(fresh&&LK.state==="done") body=`<div class="grid" style="margin-top:4px">${LK.items.map(gameCard).join("")}</div><p class="note" style="margin:14px 0 0">Details come from Claude's knowledge of BoardGameGeek, so player counts, time and weight are close but not live. Each game's page links to its BGG listing.</p>`;
-  return `<section class="ai" style="margin-top:28px"><div class="sechead"><div><span class="eyebrow">BoardGameGeek</span><h2>Search every board game</h2>
-    <p class="lede">${q?`Look up “${esc(q)}” across the whole hobby, not just this site's list.`:"Type a game name in the search box above, then search here to find any game on BoardGameGeek."}</p></div>
-    <button class="btn primary" data-act="lookup" ${!q||(fresh&&LK.state==="loading")?"disabled":""}>Search BGG for ${q?`“${esc(q.length>24?q.slice(0,24)+"…":q)}”`:"a game"}</button></div>${body}</section>`;
+  return `<section class="ai" style="margin-top:36px"><div class="sechead"><div><span class="eyebrow">Newer games</span><h2>Can't find it?</h2>
+    <p class="lede">The list above is BoardGameGeek's catalog as of ${esc(DATA_ASOF)}, plus a few newer hits. For a game released since then, Claude can look it up.</p></div>
+    <button class="btn" data-act="lookup" ${!q||(fresh&&LK.state==="loading")?"disabled":""}>Ask Claude about ${q?`“${esc(q.length>24?q.slice(0,24)+"…":q)}”`:"a game"}</button></div>${body}</section>`;
 }
 
 /* ---------- Recommender ---------- */
-const jac=(a,b)=>{const A=new Set(a);let i=0;b.forEach(x=>A.has(x)&&i++);const u=new Set([...a,...b]).size;return u?i/u:0};
+const setOf=(g,k)=>g["_"+k]||(g["_"+k]=new Set(g[k]));
+function jac(A,b){let i=0;for(const x of b) if(A.has(x)) i++;const u=A.size+b.length-i;return u?i/u:0;}
 function sim(a,b){
-  const pOver = Math.max(0,Math.min(a.p[1],b.p[1])-Math.max(a.p[0],b.p[0])+1)>0?1:0;
-  const tr = Math.min(a.t,b.t)/Math.max(a.t,b.t);
-  return .52*jac(a.m,b.m) + .22*jac(a.c,b.c) + .16*(1-Math.abs(a.w-b.w)/4) + .04*pOver + .06*tr;
+  const pOver = Math.min(a.p[1],b.p[1])>=Math.max(a.p[0],b.p[0])?1:0;
+  const ta=a.t||60, tb=b.t||60, tr=Math.min(ta,tb)/Math.max(ta,tb);
+  return .52*jac(setOf(a,"m"),b.m) + .22*jac(setOf(a,"c"),b.c) + .16*(1-Math.abs(a.w-b.w)/4) + .04*pOver + .06*tr;
 }
+const known=g=>g.users>=500||g.hand;
+const quality=g=>g.avg?Math.max(0,Math.min(1,(g.avg-6)/2.2))*.65+Math.min(1,Math.log10(Math.max(g.users,1))/4.7)*.35:.75;
 function profile(){
   const g=S.owned.map(id=>BY_ID[id]).filter(Boolean);
   if(!g.length) return null;
@@ -538,24 +382,27 @@ function profile(){
 }
 function recommend(){
   const P=profile(); if(!P) return [];
+  const key=S.owned.join(",")+"|"+F.players+F.time+F.weight+[...F.mech].join(",")+"|"+CAT.length;
+  if(recCache&&recCache.key===key) return recCache.list;
   const mechW=Object.fromEntries(P.mech.map(([k,v])=>[k,v/P.games.length]));
-  return CAT.filter(g=>!owns(g.id)&&passes(g)).map(g=>{
+  const list=CAT.filter(g=>known(g)&&!owns(g.id)&&passes(g,true)).map(g=>{
     const sims=P.games.map(o=>({o,s:sim(g,o)})).sort((a,b)=>b.s-a.s);
     const top=sims.slice(0,3); const base=top.reduce((s,x)=>s+x.s,0)/top.length;
     const taste=g.m.reduce((s,m)=>s+(mechW[m]||0),0)/Math.max(2,g.m.length);
-    const score=.75*base+.25*Math.min(1,taste);
+    const score=.6*base+.15*Math.min(1,taste)+.25*quality(g);
     const shared=[...new Set(top.slice(0,2).flatMap(x=>x.o.m.filter(m=>g.m.includes(m))))].slice(0,2);
     return {g,score,because:top.slice(0,2).map(x=>x.o),shared};
-  }).sort((a,b)=>b.score-a.score);
+  }).sort((a,b)=>b.score-a.score).slice(0,60);
+  recCache={key,list}; return list;
 }
-function passes(g){
+function passes(g,noQuery){
   if(F.players!=="any"){const n=+F.players; if(n===6? g.p[1]<6 : (g.p[0]>n||g.p[1]<n)) return false;}
   if(F.time!=="any" && g.t>+F.time) return false;
   if(F.weight==="light"&&g.w>2.2) return false;
   if(F.weight==="medium"&&(g.w<=2.2||g.w>3.4)) return false;
   if(F.weight==="heavy"&&g.w<=3.4) return false;
   if(F.mech.size && ![...F.mech].every(m=>g.m.includes(m))) return false;
-  if(F.q){const q=norm(F.q); const hay=norm([g.n,g.d,...g.m,...g.c].join(" ")); if(!q.split(" ").every(w=>hay.includes(w))) return false;}
+  if(F.q&&!noQuery){const q=norm(F.q); if(!q) return true; const hay=g._h||(g._h=norm([g.n,...g.m,...g.c].join(" "))); if(!q.split(" ").every(w=>hay.includes(w))) return false;}
   return true;
 }
 
@@ -564,24 +411,37 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 function hash(s){let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
 function boxStyle(name){const h=hash(name);const hue=h%360;const sat=34+(h>>9)%22;const lit=34+(h>>14)%12;const ang=[45,-45,90,0,135][(h>>4)%5];
   return `--c1:hsl(${hue} ${sat}% ${lit}%);--ang:${ang}deg`;}
+let COVERS=null;
+function coverUrl(g){const c=COVERS&&g&&g.bgg&&COVERS[g.bgg];if(!c)return "";const [h,sig,pic]=c.split("|");return `https://cf.geekdo-images.com/${h}__micro/img/${sig}=/fit-in/64x64/filters:strip_icc()/${pic}`;}
+const coverImg=(g,cls)=>{const u=coverUrl(g);return u?`<img class="${cls||"cover"}" src="${u}" alt="" loading="lazy" decoding="async" onerror="this.closest('.has-cover')&&this.closest('.has-cover').classList.remove('has-cover');this.remove()">`:"";};
+/* Covers come from BoardGameGeek's image server. Probe once; only fetch covers.json where images from there can load. */
+(function(){const im=new Image();im.onload=()=>{fetch("covers.json").then(r=>r.ok?r.json():null).then(j=>{if(j){COVERS=j;render();}}).catch(()=>{});};
+  im.src="https://cf.geekdo-images.com/S3ybV1LAp-8SnHIXLLjVqA__micro/img/S4tXI3Yo7BtqmBoKINLLVUFsaJ0=/fit-in/64x64/filters:strip_icc()/pic1534148.jpg";})();
 const initial=n=>esc(n.replace(/^(the|a)\s+/i,"").replace(/^[^A-Za-z0-9]+/,"").charAt(0).toUpperCase());
 function pips(w){let s='<span class="pips" title="Weight '+w.toFixed(1)+' of 5">';for(let i=1;i<=5;i++){s+='<i class="'+(w>=i-.25?"on":w>=i-.75?"half":"")+'"></i>';}return s+"</span>";}
 const players=g=>g.p[0]===g.p[1]?g.p[0]+"p":g.p[0]+"–"+(g.p[1]>=20?g.p[1]+"+":g.p[1])+"p";
-function box(g,tag){return `<button class="box" style="${boxStyle(g.n)}" data-open="${g.id}" aria-label="Open ${esc(g.n)}">
-  <span class="initial" aria-hidden="true">${initial(g.n)}</span><span class="yr">${g.y}</span>${tag?`<span class="tag">${tag}</span>`:""}
+function box(g,tag){const cv=coverImg(g);return `<button class="box${cv?" has-cover":""}" style="${boxStyle(g.n)}" data-open="${g.id}" aria-label="Open ${esc(g.n)}">
+  <span class="initial" aria-hidden="true">${initial(g.n)}</span>${cv}<span class="yr">${g.y}</span>${tag?`<span class="tag">${tag}</span>`:""}
   <span class="t">${esc(g.n)}</span></button>`;}
-function metaRow(g){return `<div class="meta">${pips(g.w)}<span>${g.w.toFixed(1)}</span><span>${players(g)}</span><span>${g.t}′</span></div>`;}
+function metaRow(g){return `<div class="meta">${pips(g.w)}<span title="${g.west?"Estimated weight":"BGG weight"}">${g.west?"~":""}${g.w.toFixed(1)}</span><span>${players(g)}</span>${g.t?`<span>${g.t}′</span>`:""}${g.avg?`<span title="BGG average rating">★${g.avg.toFixed(1)}</span>`:""}</div>`;}
 function toast(msg){const r=document.getElementById("toastRoot");r.innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`;clearTimeout(toast.t);toast.t=setTimeout(()=>r.innerHTML="",3200);}
 
 /* ---------- Learn-to-play links ---------- */
 const enc=encodeURIComponent;
+/* Exact BGG file pages for rulebooks we've confirmed; every other game uses its English-only, most-recommended Files list. */
+const RULEBOOK={266192:"https://boardgamegeek.com/filepage/173599/wingspan-core-rulebook",30549:"https://boardgamegeek.com/filepage/27536/pandemic-rules-with-permission-from-z-man-games",
+  167791:"https://boardgamegeek.com/filepage/150672/tm-english-rulebook",173346:"https://boardgamegeek.com/filepage/127753/official-rules-of-7-wonders-duel",
+  161936:"https://boardgamegeek.com/filepage/123531/pandemic-legacy-rules-english-no-spoilers",385761:"https://boardgamegeek.com/filepage/261725/faraway-rulebook",
+  328479:"https://boardgamegeek.com/filepage/229220/living-forest-rules",336986:"https://boardgamegeek.com/filepage/239549/flamecraft-en-rulebook"};
+const rulesUrl=bgg=>RULEBOOK[bgg]||"https://boardgamegeek.com/files/thing/"+bgg+"?sort=hot&languageid=2184";
 function learnLinks(name,bgg){
   const ic={
     pdf:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 1.5h5l3 3v10H4z"/><path d="M9 1.5v3h3M6 9h4M6 11.5h4"/></svg>',
     play:'<svg width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M5 3.5v9l7.5-4.5z"/></svg>',
     bgg:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>'};
   const L=bgg?[
-    ["pdf","Rulebook on BoardGameGeek","Opens this game's Files page: official rulebooks, player aids and reference sheets","https://boardgamegeek.com/boardgame/"+bgg+"/"+slug(name)+"/files?sort=hot"],
+    ...(RULEBOOK[bgg]?[["pdf","Rulebook on BoardGameGeek","The game's English rulebook file, ready to download",RULEBOOK[bgg]]]:[]),
+    ["pdf",RULEBOOK[bgg]?"All English files on BGG":"Rulebook on BoardGameGeek","English files for this game, most recommended first. The rulebook is usually at the top, next to player aids.",rulesUrl(bgg)],
     ["pdf","Publisher rulebook PDF","Search for the official PDF on the publisher's site","https://www.google.com/search?q="+enc('"'+name+'" rulebook filetype:pdf')],
   ]:[
     ["pdf","Rulebook PDF","Search for the publisher's official rulebook","https://www.google.com/search?q="+enc('"'+name+'" rulebook filetype:pdf')],
@@ -590,13 +450,13 @@ function learnLinks(name,bgg){
   L.push(
     ["play","How to play videos","YouTube rules explanations","https://www.youtube.com/results?search_query="+enc("how to play "+name+" board game")],
     ["play","Watch It Played","Rodney Smith's thorough teach-and-playthrough series","https://www.youtube.com/results?search_query="+enc("Watch It Played "+name)],
-    ["play","Quick teach","Short rules overviews, usually under 10 minutes","https://www.youtube.com/results?search_query="+enc(name+" rules in 5 minutes")],
+    ["play","Short rules videos","Rules overviews, usually under 10 minutes","https://www.youtube.com/results?search_query="+enc(name+" rules in 5 minutes")],
   );
   return `<div class="learn">${L.map(([k,t,s,u])=>`<a href="${u}" target="_blank" rel="noopener"><span class="ic">${ic[k]}</span><span class="tx"><b>${t}</b><small>${s}</small></span><span class="arr">↗</span></a>`).join("")}</div>`;
 }
 
 /* ---------- Views ---------- */
-const VIEWS=["discover","browse","shelf"];
+const VIEWS=["discover","tonight","browse","shelf"];
 let view="discover", openId=null, openExtra=null;
 function route(){
   const h=location.hash.slice(1);
@@ -616,7 +476,7 @@ function filtersHTML(withSearch){
     ${(F.players!=="any"||F.time!=="any"||F.weight!=="any"||F.mech.size||F.q)?`<button class="btn ghost sm" data-act="clearf">Clear filters</button>`:""}
   </div>`;
 }
-function mechChips(){return `<div class="chips" role="group" aria-label="Mechanics">${ALL_MECH.map(m=>`<button class="chip" data-mech="${esc(m)}" aria-pressed="${F.mech.has(m)}">${esc(m)}</button>`).join("")}</div>`;}
+function mechChips(){return `<div class="chips" role="group" aria-label="Mechanics">${CHIP_MECH.map(m=>`<button class="chip" data-mech="${esc(m)}" aria-pressed="${F.mech.has(m)}">${esc(m)}</button>`).join("")}</div>`;}
 
 function exampleBanner(){
   return S.example?`<div class="banner"><strong>Example shelf</strong><span class="sp">These six games are a sample so you can see how recommendations work. Import your BoardGameGeek collection or mark games you own to make it yours.</span><a class="btn sm primary" href="#shelf">Import my games</a></div>`:"";
@@ -630,20 +490,20 @@ function vDiscover(){
   return `${exampleBanner()}
   <div class="profile">
     <div><span class="eyebrow">Your table</span><h1>Games you might like</h1>
-      <p class="lede">Based on the ${P.games.length} game${P.games.length>1?"s":""} on your shelf. You lean toward these mechanics:</p>
+      <p class="lede">Based on the ${P.games.length} game${P.games.length>1?"s":""} on your shelf, scored against ${known?CAT.filter(known).length.toLocaleString():""} well-rated BoardGameGeek games. You lean toward these mechanics:</p>
       <div class="dna">${P.mech.slice(0,7).map(([k,v])=>`<span>${esc(k)}<b>${v}</b></span>`).join("")}</div></div>
     <dl class="stats">
       <div><dt>Avg weight</dt><dd>${P.w.toFixed(1)}<span class="note"> ${wt}</span></dd></div>
       <div><dt>Avg time</dt><dd>${P.t}′</dd></div>
-      <div><dt>Themes</dt><dd style="font-size:14px;font-family:var(--f-body)">${P.theme.slice(0,2).map(x=>esc(x[0])).join(", ")}</dd></div>
+      <div><dt>Categories</dt><dd style="font-size:14px;font-family:var(--f-body)">${P.theme.slice(0,2).map(x=>esc(x[0])).join(", ")}</dd></div>
     </dl>
   </div>
   ${filtersHTML(false)}
-  ${recs.length?`<div class="grid">${recs.map((r,i)=>recCard(r,i)).join("")}</div>`:`<div class="empty">No catalog games match these filters. Try loosening them.</div>`}
+  ${recs.length?`<div class="grid">${recs.map((r,i)=>recCard(r,i)).join("")}</div>`:`<div class="empty">No games match these filters. Try loosening them.</div>`}
   <section>${aiHTML()}</section>`;
 }
 function recCard(r){
-  const g=r.g, pct=Math.round(Math.min(.99,r.score*1.45)*100);
+  const g=r.g, pct=Math.round(Math.min(.99,r.score*1.3)*100);
   return `<article class="card">${box(g, S.wish.includes(g.id)?"Wishlist":"")}
     <div class="match" title="How closely this matches your shelf"><span>${pct}%</span><span class="bar"><span style="width:${pct}%"></span></span></div>
     <h3>${esc(g.n)}</h3>${metaRow(g)}
@@ -658,8 +518,8 @@ function aiHTML(){
   else if(ai.state==="error") body=`<p class="status warn">${esc(ai.err)}</p>`;
   else if(ai.state==="off") body=`<p class="status">Claude picks aren't available in this view. The catalog recommendations above still work.</p>`;
   if(ai.items.length) body+=`<div class="grid">${ai.items.map((x,i)=>`<div class="ai-card"><span class="eyebrow">${esc(x.year||"")} · ${esc(x.players||"")} · ${esc(x.time||"")}</span><h3><button data-ai="${i}">${esc(x.name)}</button></h3><p class="why">${esc(x.why)}</p><div class="row"><button class="btn sm" data-ai="${i}">Rules & videos</button></div></div>`).join("")}</div>`;
-  return `<div class="ai"><div class="sechead"><div><span class="eyebrow">Beyond the catalog</span><h2>Ask Claude for picks</h2>
-    <p class="lede">The list above draws from ${CAT.length} well-known games. Claude can look across the whole hobby, using all ${names.length} games on your shelf and your filters.</p></div>
+  return `<div class="ai"><div class="sechead"><div><span class="eyebrow">A second opinion</span><h2>Ask Claude for picks</h2>
+    <p class="lede">The picks above are scored from BoardGameGeek data (${esc(DATA_ASOF)}). Claude can also suggest newer releases, using all ${names.length} games on your shelf and your filters.</p></div>
     <button class="btn primary" data-act="ai" ${!names.length||ai.state==="loading"?"disabled":""}>${ai.items.length?"Get different picks":"Get 6 picks"}</button></div>${body}</div>`;
 }
 async function askClaude(){
@@ -688,16 +548,27 @@ Return only JSON: an array of 6 objects with keys "name", "year" (number), "play
   render();
 }
 
+function searchResults(){
+  const q=norm(F.q);
+  let res=CAT.filter(g=>passes(g));
+  if(q){
+    const rankOf=g=>{const n=norm(g.n); return n===q?0:n.startsWith(q)?1:n.includes(q)?2:3;};
+    res.sort((a,b)=>rankOf(a)-rankOf(b)||b.users-a.users);
+  }
+  return res;
+}
 function vBrowse(){
-  const res=CAT.filter(passes).sort((a,b)=>a.n.localeCompare(b.n));
-  return `${exampleBanner()}<span class="eyebrow">Search · ${CAT.length} games here, plus everything on BoardGameGeek</span><h1>Find a game</h1>
-  <p class="lede">Type any game name. Matches from this site appear instantly; press Enter or <b>Search BGG</b> to look across every board game. Tap a box for rules and how-to-play videos.</p>
+  const res=searchResults();
+  const shown=res.slice(0,F.limit);
+  const status=DATA_STATE==="loading"?" · loading the full list…":DATA_STATE==="core"?" · couldn't load the full list, showing the top games":"";
+  return `${exampleBanner()}<span class="eyebrow">BoardGameGeek · ${CAT.length.toLocaleString()} games${status}</span><h1>Find a game</h1>
+  <p class="lede">Search every game on BoardGameGeek by name, mechanic or category, right here. Most-rated games come first. Tap a box for rules and how-to-play videos.</p>
   ${filtersHTML(true)}${mechChips()}
-  <p class="note" style="margin:0 0 12px">${res.length} game${res.length===1?"":"s"}</p>
-  ${res.length?`<div class="grid">${res.map(g=>`<article class="card">${box(g, owns(g.id)?"Owned":S.wish.includes(g.id)?"Wishlist":"")}<h3>${esc(g.n)}</h3>${metaRow(g)}
-    <div class="row"><button class="btn sm ${owns(g.id)?"owned":""}" data-own="${g.id}">${owns(g.id)?"✓ Owned":"+ I own this"}</button></div></article>`).join("")}</div>`
-  :`<div class="empty">Nothing on this site's list matches${F.q?`. Search BGG below to find “${esc(F.q)}”`:""}.</div>`}
-  ${hobbyHTML()}`;
+  <p class="note" style="margin:0 0 12px">${res.length.toLocaleString()} game${res.length===1?"":"s"}${res.length>shown.length?` · showing ${shown.length}`:""}</p>
+  ${res.length?`<div class="grid">${shown.map(gameCard).join("")}</div>
+    ${res.length>shown.length?`<div style="display:flex;justify-content:center;margin-top:20px"><button class="btn" data-act="more">Show more (${(res.length-shown.length).toLocaleString()} left)</button></div>`:""}`
+  :`<div class="empty">No games match${F.q?` “${esc(F.q)}”`:""}. Check the spelling or loosen the filters.</div>`}
+  ${F.q.trim()?hobbyHTML():""}`;
 }
 
 function vShelf(){
@@ -768,18 +639,108 @@ async function handlePaste(text){
   toast(`Added ${r.hit+r.miss} games · ${r.hit} matched the catalog${r.miss?`, ${r.miss} kept for Claude's picks`:""}.`);
 }
 
+/* ---------- Tonight: pick from your own shelf ---------- */
+const T={players:"4",time:"60",weight:"any",seed:0};
+function tonightPicks(){
+  const n=+T.players, tm=T.time==="any"?null:+T.time;
+  const mine=S.owned.map(id=>BY_ID[id]).filter(Boolean);
+  const wOk=g=>T.weight==="any"||(T.weight==="light"&&g.w<=2.2)||(T.weight==="medium"&&g.w>2.2&&g.w<=3.4)||(T.weight==="heavy"&&g.w>3.4);
+  const pOk=g=>g.p[0]<=n&&n<=g.p[1];
+  const tOk=g=>!tm||(g.t||60)<=tm;
+  const score=g=>{
+    const use=tm?(g.t||60)/tm:.75, st=1-Math.abs(.8-use);
+    const hi=Math.min(g.p[1],8), mid=(g.p[0]+hi)/2, sp=1-Math.abs(n-mid)/(hi-g.p[0]+2);
+    const jit=(hash(g.id+":"+T.seed)%1000)/1000;
+    return .38*st+.32*sp+(T.seed?.3:.12)*jit+.1*quality(g);
+  };
+  const fit=mine.filter(g=>pOk(g)&&tOk(g)&&wOk(g)).map(g=>({g,s:score(g)})).sort((a,b)=>b.s-a.s).map(x=>x.g);
+  const near=mine.filter(g=>!fit.includes(g)&&wOk(g)&&(pOk(g)||tOk(g))).map(g=>({g,why:!pOk(g)?(n<g.p[0]?`needs ${g.p[0]}+ players`:`plays up to ${g.p[1]}`):`takes about ${g.t} min`})).slice(0,5);
+  return {fit,near,total:mine.length};
+}
+function vTonight(){
+  const sel=(id,label,opts,val)=>`<label for="${id}">${label}<select id="${id}" data-t="${id.replace('t-','')}">${opts.map(([v,t])=>`<option value="${v}"${v===val?" selected":""}>${t}</option>`).join("")}</select></label>`;
+  const {fit,near,total}=tonightPicks();
+  const top=fit[0], alts=fit.slice(1,7);
+  const pl=T.players==="1"?"solo":T.players+" players";
+  let body;
+  if(!total) body=`<div class="empty">Your shelf is empty. <a href="#shelf">Add the games you own</a> and this page will pick from them.</div>`;
+  else if(!top) body=`<div class="empty">Nothing on your shelf fits ${pl}${T.time!=="any"?` in ${T.time} minutes`:""}${T.weight!=="any"?` at ${T.weight} weight`:""}. Try more time or a different weight.</div>`;
+  else body=`<div class="pick">${box(top,"Tonight's pick")}
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:0"><span class="eyebrow">Play this</span><h2>${esc(top.n)}</h2>${metaRow(top)}
+        <p class="why">${top.d?esc(top.d)+" ":""}Plays ${players(top).replace("p"," players")}${top.t?` in about ${top.t} minutes`:""}.</p>
+        <div class="actions"><button class="btn primary" data-teachgo="${top.id}">Teach me in 2 minutes</button><button class="btn" data-open="${top.id}">Rules & videos</button><button class="btn ghost" data-act="shuffle">Pick another</button></div></div></div>
+    ${alts.length?`<div class="sechead"><h2>Also fits tonight</h2><span class="note">${fit.length} game${fit.length>1?"s":""} on your shelf fit</span></div><div class="grid">${alts.map(gameCard).join("")}</div>`:""}`;
+  return `${exampleBanner()}<span class="eyebrow">From your shelf</span><h1>What should we play tonight?</h1>
+  <p class="lede">Tell it who's at the table and how long you've got. It picks from the ${total} game${total===1?"":"s"} you own.</p>
+  <div class="filters">${sel("t-players","Players",[["1","Solo"],["2","2"],["3","3"],["4","4"],["5","5"],["6","6"],["7","7"],["8","8+"]],T.players)}
+    ${sel("t-time","Time",[["30","30 min"],["45","45 min"],["60","1 hour"],["90","90 min"],["120","2 hours"],["180","3 hours"],["any","All night"]],T.time)}
+    ${sel("t-weight","Weight",[["any","Any"],["light","Light"],["medium","Medium"],["heavy","Heavy"]],T.weight)}
+    <button class="btn ghost sm" data-act="shuffle">Shuffle</button></div>
+  ${body}
+  ${near.length?`<section style="margin-top:36px"><div class="sechead"><h2>Almost</h2><span class="note">On your shelf, but not quite right for tonight</span></div><div class="miss">${near.map(({g,why})=>`<div class="li"><span class="swatch" style="${boxStyle(g.n)}"></span><span class="nm" style="flex:1;min-width:0"><button style="all:unset;cursor:pointer;font-weight:600" data-open="${g.id}">${esc(g.n)}</button></span><span class="note">${esc(why)}</span></div>`).join("")}</div></section>`:""}`;
+}
+
+/* ---------- Quick teach (Claude) ---------- */
+const TEACH={};  // id -> {state,text,err}
+function teachHTML(g){
+  const t=TEACH[g.id];
+  if(!t) return `<button class="btn" data-teach="${g.id}">Teach me in 2 minutes</button>`;
+  if(t.state==="off") return `<p class="note">Quick teach needs Claude, which isn't available in this view. Use the rulebook and video links below.</p>`;
+  if(t.state==="error") return `<p class="note warn">${esc(t.err)}</p><button class="btn sm" data-teach="${g.id}">Try again</button>`;
+  return `<div class="teach" aria-live="polite">${t.text?mdLite(t.text):`<p class="note">Writing a quick teach…</p>`}
+    ${t.state==="done"?`<p class="note">Written by Claude from what it knows of the game. Check the rulebook for edge cases and expansions.</p>`:""}</div>`;
+}
+function mdLite(src){
+  const out=[];let list=false;
+  src.split(/\r?\n/).forEach(line=>{
+    const l=line.trim();
+    const inl=x=>esc(x).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+    if(/^[-*•] /.test(l)){if(!list){out.push("<ul>");list=true;}out.push("<li>"+inl(l.slice(2))+"</li>");return;}
+    if(list){out.push("</ul>");list=false;}
+    if(!l) return;
+    if(/^#{1,4} /.test(l)) out.push("<h4>"+inl(l.replace(/^#+ /,""))+"</h4>");
+    else out.push("<p>"+inl(l)+"</p>");
+  });
+  if(list) out.push("</ul>");
+  return out.join("");
+}
+function paintTeach(id){
+  const el=document.getElementById("teachBox");
+  if(el&&openId===id) el.innerHTML=teachHTML(BY_ID[id]);
+}
+async function teach(id){
+  const g=BY_ID[id]; if(!g) return;
+  TEACH[id]={state:"loading",text:""}; paintTeach(id);
+  try{
+    const sample=window.claude?.use?await claude.use("sample"):null;
+    if(!sample){TEACH[id]={state:"off"};paintTeach(id);return;}
+    const prompt=`Teach the board game "${g.n}"${g.y?` (${g.y})`:""} to a group who has never played, in about two minutes of reading.
+It plays ${g.p[0]===g.p[1]?g.p[0]:g.p[0]+"-"+g.p[1]} players${g.t?` in about ${g.t} minutes`:""}. Mechanics: ${g.m.slice(0,8).join(", ")||"unknown"}.
+Use exactly these sections as markdown "## " headings: Goal, Setup, On your turn, How it ends, First-game tips.
+Under each heading use short "- " bullets (at most 5 per section). Plain language, no filler, under 300 words total. Describe the base game only.
+If you don't know this specific game well enough to teach it accurately, reply only with: "I don't know this game well enough to teach it. Use the rulebook link below." Never guess at rules.`;
+    const res=await sample(prompt,{modelTier:"default",cache:true,onText:({text})=>{TEACH[id]={state:"loading",text};paintTeach(id);}});
+    TEACH[id]={state:"done",text:res.text||""}; 
+  }catch(e){
+    TEACH[id]=e&&e.code==="not_granted"?{state:"off"}:{state:"error",err:e&&e.code==="rate_limited"?"Too many requests just now. Wait a minute and try again.":"Couldn't write the teach right now."};
+  }
+  paintTeach(id);
+}
+
 /* ---------- Detail sheet ---------- */
 function sheetHTML(){
   if(openId){
     const g=BY_ID[openId];
-    const sims=CAT.filter(x=>x.id!==g.id).map(x=>({x,s:sim(g,x)})).sort((a,b)=>b.s-a.s).slice(0,6);
+    const sims=CAT.filter(x=>x.id!==g.id&&known(x)).map(x=>({x,s:sim(g,x)})).sort((a,b)=>b.s-a.s).slice(0,6);
     return `<div class="scrim" data-act="close"></div><aside class="sheet" role="dialog" aria-modal="true" aria-label="${esc(g.n)}">
-      <div class="hero" style="${boxStyle(g.n)}"><span class="initial" aria-hidden="true">${initial(g.n)}</span><span class="yr">${g.y}</span><h2>${esc(g.n)}</h2><button class="close" data-act="close" aria-label="Close">✕</button></div>
+      <div class="hero${coverUrl(g)?" has-cover":""}" style="${boxStyle(g.n)}"><span class="initial" aria-hidden="true">${initial(g.n)}</span>${coverImg(g)}<span class="yr">${g.y}</span><h2>${esc(g.n)}</h2><button class="close" data-act="close" aria-label="Close">✕</button></div>
       <div class="body">
-        <p style="margin:0;font-size:16px">${esc(g.d)}</p>
+        ${g.d?`<p style="margin:0;font-size:16px">${esc(g.d)}</p>`:""}
         <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${owns(g.id)?"owned":"primary"}" data-own="${g.id}">${owns(g.id)?"✓ On my shelf":"+ I own this"}</button>${owns(g.id)?"":`<button class="btn" data-wish="${g.id}">${S.wish.includes(g.id)?"★ On wishlist":"☆ Add to wishlist"}</button>`}</div>
-        <dl class="specs"><div><dt>Players</dt><dd>${players(g).replace("p","")}</dd></div><div><dt>Time</dt><dd>${g.t} min</dd></div><div><dt>Weight</dt><dd>${g.w.toFixed(1)}<span class="note">/5</span></dd></div></dl>\n        ${g.bgg?`<a class="btn primary" style="align-self:flex-start" target="_blank" rel="noopener" href="https://boardgamegeek.com/boardgame/${g.bgg}/${slug(g.n)}/files?sort=hot">Open rulebook files on BGG ↗</a>`:""}
-        <div><span class="eyebrow">Mechanics & themes</span><div class="tags" style="margin-top:8px">${g.m.map(m=>`<span class="m">${esc(m)}</span>`).join("")}${g.c.map(c=>`<span>${esc(c)}</span>`).join("")}</div></div>
+        <dl class="specs"><div><dt>Players</dt><dd>${players(g).replace("p","")}</dd></div><div><dt>Time</dt><dd>${g.t?g.t+" min":"—"}</dd></div><div><dt>Weight</dt><dd>${g.west?"~":""}${g.w.toFixed(1)}<span class="note">/5${g.west?" est.":""}</span></dd></div></dl>
+        ${g.avg?`<p class="note" style="margin:-10px 0 0">BGG rating ${g.avg.toFixed(1)} from ${g.users.toLocaleString()} ratings${g.rank?` · ranked #${g.rank.toLocaleString()}`:""} (as of ${esc(DATA_ASOF)})</p>`:""}\n        ${g.bgg?`<a class="btn primary" style="align-self:flex-start" target="_blank" rel="noopener" href="${rulesUrl(g.bgg)}">${RULEBOOK[g.bgg]?"Open the rulebook on BGG ↗":"Rulebook on BGG (English files) ↗"}</a>`:""}
+        <div><span class="eyebrow">Mechanics & categories</span><div class="tags" style="margin-top:8px">${g.m.map(m=>`<span class="m">${esc(m)}</span>`).join("")}${g.c.map(c=>`<span>${esc(c)}</span>`).join("")}</div></div>
+        <div><span class="eyebrow">Quick teach</span><div id="teachBox" style="margin-top:8px">${teachHTML(g)}</div></div>
         <div><span class="eyebrow">Learn to play</span><div style="margin-top:8px">${learnLinks(g.n,g.bgg)}</div></div>
         <div><span class="eyebrow">Plays like</span><div class="similar" style="margin-top:8px">${sims.map(({x})=>box(x,owns(x.id)?"Owned":"")).join("")}</div></div>
       </div></aside>`;
@@ -823,9 +784,10 @@ function importCSV(text){
   const head=rows[0].map(h=>h.trim().toLowerCase());
   let ni=head.indexOf("objectname"); if(ni<0) ni=head.findIndex(h=>h==="name"||h==="game"||h==="title");
   if(ni<0){toast("Couldn't find a game name column. Use the CSV from BGG's Export.");return;}
-  const oi=head.indexOf("own");
-  const names=rows.slice(1).filter(r=>oi<0||r[oi]==="1").map(r=>r[ni]||"");
-  const {hit,miss}=addNames(names,true);
+  const oi=head.indexOf("own"), ii=head.indexOf("objectid");
+  const kept=rows.slice(1).filter(r=>oi<0||r[oi]==="1");
+  const byId=ii>=0?kept.map(r=>BY_ID[String(r[ii]).trim()]?BY_ID[String(r[ii]).trim()].n:(r[ni]||"")):kept.map(r=>r[ni]||"");
+  const {hit,miss}=addNames(byId,true);
   toast(`Imported ${hit+miss} owned games · ${hit} matched the catalog${miss?`, ${miss} kept for Claude's picks`:""}.`);
   location.hash="discover";
 }
@@ -834,7 +796,7 @@ function importCSV(text){
 function render(){
   const main=document.getElementById("main");
   const focusId=document.activeElement&&document.activeElement.id; const caret=document.activeElement&&document.activeElement.selectionStart;
-  main.innerHTML= view==="browse"?vBrowse(): view==="shelf"?vShelf(): vDiscover();
+  main.innerHTML= view==="browse"?vBrowse(): view==="shelf"?vShelf(): view==="tonight"?vTonight(): vDiscover();
   document.querySelectorAll("nav.tabs a").forEach(a=>{if(a.dataset.view===view)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
   const n=S.owned.length+S.extra.length; document.getElementById("shelfCount").textContent=n?n:"";
   document.getElementById("sheetRoot").innerHTML=sheetHTML();
@@ -853,20 +815,24 @@ function closeSheet(){
   openId=null;openExtra=null;render();
 }
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-open],[data-own],[data-wish],[data-act],[data-mech],[data-ai],[data-extra-open],[data-addextra],[data-rmx]");
+  const t=e.target.closest("[data-teach],[data-teachgo],[data-open],[data-own],[data-wish],[data-act],[data-mech],[data-ai],[data-extra-open],[data-addextra],[data-rmx]");
   if(!t) return;
   const d=t.dataset;
+  if(d.teach){teach(d.teach);return;}
+  if(d.teachgo){location.hash="game-"+d.teachgo;setTimeout(()=>{if(!TEACH[d.teachgo]||TEACH[d.teachgo].state==="error")teach(d.teachgo);},0);return;}
   if(d.open){e.preventDefault();openExtra=null;location.hash="game-"+d.open;return;}
   if(d.own){toggleOwn(d.own);return;}
   if(d.wish){toggleWish(d.wish);return;}
-  if(d.mech){F.mech.has(d.mech)?F.mech.delete(d.mech):F.mech.add(d.mech);render();return;}
-  if(d.ai!=null&&d.ai!==""){openId=null;openExtra=ai.items[+d.ai];render();return;}
-  if(d.extraOpen){e.preventDefault();openId=null;openExtra={name:d.extraOpen};render();return;}
+  if(d.mech){F.mech.has(d.mech)?F.mech.delete(d.mech):F.mech.add(d.mech);F.limit=48;render();return;}
+  if(d.ai!=null&&d.ai!==""){const x=ai.items[+d.ai];const g=x&&BY_NORM[norm(x.name)];if(g){openExtra=null;location.hash="game-"+g.id;return;}openId=null;openExtra=x;render();return;}
+  if(d.extraOpen){e.preventDefault();const g=BY_NORM[norm(d.extraOpen)];if(g){location.hash="game-"+g.id;return;}openId=null;openExtra={name:d.extraOpen};render();return;}
   if(d.addextra){const r=addNames([d.addextra],false);toast(r.hit?"Added to your shelf.":"Added to your shelf. It's not in the catalog, so Claude's picks will use it.");return;}
   if(d.rmx){S.extra.splice(+d.rmx,1);save();render();return;}
   switch(d.act){
     case "close": closeSheet(); break;
-    case "clearf": F.players=F.time=F.weight="any";F.q="";F.mech.clear();render();break;
+    case "clearf": F.players=F.time=F.weight="any";F.q="";F.mech.clear();F.limit=48;render();break;
+    case "more": F.limit+=48; render(); break;
+    case "shuffle": T.seed++; render(); break;
     case "lookup": lookup(F.q); break;
     case "ai": askClaude(); break;
     case "savebgg": {S.bgg=document.getElementById("bggUser").value.trim();save();render();toast(S.bgg?"Linked "+S.bgg+".":"Unlinked.");break;}
@@ -876,11 +842,14 @@ document.addEventListener("click",e=>{
     case "clearno": confirmClear=false;render();break;
   }
 });
-document.addEventListener("change",e=>{const f=e.target.dataset.f;if(f){F[f]=e.target.value;render();}});
-document.addEventListener("input",e=>{if(e.target.id==="f-q"){F.q=e.target.value;render();}});
-document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="f-q"){e.preventDefault();lookup(F.q);}});
+document.addEventListener("change",e=>{const tk=e.target.dataset.t;if(tk){T[tk]=e.target.value;T.seed=0;render();return;}const f=e.target.dataset.f;if(f){F[f]=e.target.value;F.limit=48;render();}});
+let qT;document.addEventListener("input",e=>{if(e.target.id==="f-q"){F.q=e.target.value;F.limit=48;clearTimeout(qT);qT=setTimeout(render,120);}});
+
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(openId||openExtra))closeSheet(); if(e.key==="Enter"&&e.target.id==="bggUser"){document.querySelector('[data-act="savebgg"]').click();}});
 route();
+fetch("games.json").then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
+  .then(J=>{loadData(J);DATA_STATE="full";fixS();route();})
+  .catch(()=>{DATA_STATE="core";render();});
 </script>
 
 </body>
